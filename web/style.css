@@ -126,6 +126,39 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
 }
 
+.date-field {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.74);
+  padding: 12px;
+}
+
+.date-field label {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.date-field input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-strong);
+  color: var(--ink);
+  padding: 10px 11px;
+  font: 15px "Aptos", "Segoe UI", sans-serif;
+}
+
+.date-field p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 button {
   border: 0;
   border-radius: 7px;

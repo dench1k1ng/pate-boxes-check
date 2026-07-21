@@ -1,5 +1,6 @@
 const els = {
   input: document.querySelector("#messageInput"),
+  expiryDate: document.querySelector("#expiryDateInput"),
   parseBtn: document.querySelector("#parseBtn"),
   clearBtn: document.querySelector("#clearBtn"),
   sampleBtn: document.querySelector("#sampleBtn"),
@@ -37,6 +38,29 @@ function setStatus(text, tone = "idle") {
 
 function money(value) {
   return typeof value === "number" ? `${value.toLocaleString("ru-RU")} ₸` : "нет";
+}
+
+function tomorrowDateValue() {
+  const now = new Date();
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const year = tomorrow.getFullYear();
+  const month = String(tomorrow.getMonth() + 1).padStart(2, "0");
+  const day = String(tomorrow.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function expiryDateTime() {
+  if (!els.expiryDate.value) return null;
+  return `${els.expiryDate.value}T21:00:00`;
+}
+
+function applyExpiryDate(cards) {
+  const expiryDate = expiryDateTime();
+  return cards.map((item) => ({
+    ...item,
+    expiryDate,
+    expirationDate: expiryDate,
+  }));
 }
 
 function escapeHtml(value) {
@@ -118,6 +142,7 @@ function renderUploadReport(data) {
   els.uploadReport.innerHTML = `
     <div class="upload-summary">
       <strong>${summary.dryRun ? "Проверка payload" : "Отправка в CRM"}</strong>
+      <span>срок: ${escapeHtml(expiryDateTime() || "не указан")}</span>
       <span>готово: ${summary.ok ?? 0}</span>
       <span>пропущено: ${summary.skipped ?? 0}</span>
       <span>ошибок: ${summary.failed ?? 0}</span>
@@ -158,7 +183,7 @@ async function uploadToCrm(dryRun) {
     const response = await fetch("/api/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items, dryRun, force: false }),
+      body: JSON.stringify({ items: applyExpiryDate(items), dryRun, force: false }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Ошибка CRM");
@@ -195,7 +220,7 @@ async function parseMessage() {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Ошибка парсинга");
-    items = data.items || [];
+    items = applyExpiryDate(data.items || []);
     els.uploadReport.hidden = true;
     render();
     setStatus(`Готово: ${data.summary.ok} автоматически, ${data.summary.review} проверить`, "ok");
@@ -217,6 +242,12 @@ els.clearBtn.addEventListener("click", () => {
 els.sampleBtn.addEventListener("click", () => {
   els.input.value = sample;
   els.input.focus();
+});
+
+els.expiryDate.value = tomorrowDateValue();
+els.expiryDate.addEventListener("change", () => {
+  items = applyExpiryDate(items);
+  els.uploadReport.hidden = true;
 });
 
 els.tabs.forEach((tab) => {

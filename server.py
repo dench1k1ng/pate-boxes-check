@@ -242,6 +242,8 @@ def upload_one_card(card, client, category_id, category_match, stores, store_ali
         "storeId": store_id,
         "categoryId": category_id,
         "images": [image_url] if image_url else [],
+        "expiryDate": card.get("expiryDate"),
+        "expirationDate": card.get("expiryDate"),
         "status": card.get("status", "AVAILABLE"),
         "active": True,
     }

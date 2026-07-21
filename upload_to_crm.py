@@ -216,12 +216,19 @@ def main():
             "storeId": store_id,
             "categoryId": category_id,
             "images": [image_url] if image_url else [],
+            "expiryDate": card.get("expiryDate"),
+            "expirationDate": card.get("expiryDate"),
             "status": card.get("status", "AVAILABLE"),
             "active": True,
         }
 
         if args.dry_run:
-            log(f"[DRY-RUN] would POST /products: {payload['name']} | store={store_id} cat={category_id} original={payload['originalPrice']} discount={payload['discountPercentage']} img={image_url}")
+            log(
+                f"[DRY-RUN] would POST /products: {payload['name']} | "
+                f"store={store_id} cat={category_id} "
+                f"expiryDate={payload['expiryDate']} expirationDate={payload['expirationDate']} "
+                f"img={image_url}"
+            )
             report.append({**card, "result": "dry-run", "payload": payload})
             continue
 
