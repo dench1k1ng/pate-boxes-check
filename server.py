@@ -149,19 +149,11 @@ def upload_cards(cards, dry_run=False, force=False):
     store_aliases = cfg.get("store_aliases", {})
     client = CrmClient(cfg["base_url"], cfg["email"], cfg["password"])
 
-    categories = []
-    stores = []
-    if not dry_run:
-        client.login()
-        categories = client.get_categories()
-        stores = client.get_stores()
+    client.login()
+    categories = client.get_categories()
+    stores = client.get_stores()
 
-    category_id = None
-    if categories:
-        category_name = cfg.get("category_name")
-        match = [c for c in categories if c.get("name") == category_name]
-        if match:
-            category_id = match[0]["id"]
+    category_id, category_match = resolve_category(cfg, categories)
 
     report = []
     for card in cards:
@@ -169,6 +161,7 @@ def upload_cards(cards, dry_run=False, force=False):
             card=card,
             client=client,
             category_id=category_id,
+            category_match=category_match,
             stores=stores,
             store_aliases=store_aliases,
             images_dir=images_dir,
@@ -192,7 +185,21 @@ def upload_cards(cards, dry_run=False, force=False):
     }
 
 
-def upload_one_card(card, client, category_id, stores, store_aliases, images_dir, dry_run=False, force=False):
+def resolve_category(cfg, categories):
+    if cfg.get("category_id") is not None:
+        category_id = cfg["category_id"]
+        match = next((c for c in categories if c.get("id") == category_id), None)
+        return category_id, {"id": category_id, "name": match.get("name") if match else None}
+
+    category_name = cfg.get("category_name")
+    if category_name and categories:
+        match = [c for c in categories if c.get("name") == category_name]
+        if match:
+            return match[0]["id"], {"id": match[0]["id"], "name": match[0].get("name")}
+    return None, None
+
+
+def upload_one_card(card, client, category_id, category_match, stores, store_aliases, images_dir, dry_run=False, force=False):
     label = card.get("name") or card.get("rawLine_name") or card.get("rawLine") or "unknown"
     if card.get("error"):
         return {"result": "skipped", "name": label, "reason": "не распознана строка"}
@@ -200,6 +207,8 @@ def upload_one_card(card, client, category_id, stores, store_aliases, images_dir
         return {"result": "skipped", "name": label, "reason": "нет цены/originalPrice"}
     if card.get("needsReview") and not force:
         return {"result": "skipped", "name": label, "reason": "needsReview=true"}
+    if category_id is None:
+        return {"result": "skipped", "name": label, "reason": "нет categoryId в config.json"}
 
     store_id = card.get("storeId")
     store_label = card.get("storeName", "")
@@ -219,34 +228,45 @@ def upload_one_card(card, client, category_id, stores, store_aliases, images_dir
         if dry_run:
             image_url = f"[DRY-RUN]{local_path}"
         elif local_path.exists():
-            image_url = client.upload_image(str(local_path))
+            try:
+                image_url = client.upload_image(str(local_path))
+            except Exception:
+                image_url = None
 
     payload = {
         "name": card["name"],
         "description": card.get("description", ""),
-        "price": card["price"],
         "originalPrice": card["originalPrice"],
         "discountPercentage": card.get("discountPercentage", 0),
         "stockQuantity": card.get("stockQuantity", 1),
         "storeId": store_id,
         "categoryId": category_id,
         "images": [image_url] if image_url else [],
-        "expiryDate": card["expiryDate"],
         "status": card.get("status", "AVAILABLE"),
+        "active": True,
     }
 
     if dry_run:
-        return {"result": "dry-run", "name": label, "payload": payload, "storeMatch": store_match}
+        return {
+            "result": "dry-run",
+            "name": label,
+            "payload": payload,
+            "storeMatch": store_match,
+            "categoryMatch": category_match,
+        }
 
     try:
         response = client.create_product(payload)
         if response.status_code in (200, 201):
-            return {"result": "ok", "name": label, "response": response.json(), "storeMatch": store_match}
+            return {"result": "ok", "name": label, "response": response.json(), "storeMatch": store_match, "categoryMatch": category_match}
         return {
             "result": "failed",
             "name": label,
             "status_code": response.status_code,
             "response_text": response.text,
+            "payload": payload,
+            "storeMatch": store_match,
+            "categoryMatch": category_match,
         }
     except Exception as exc:
         return {"result": "error", "name": label, "reason": str(exc)}

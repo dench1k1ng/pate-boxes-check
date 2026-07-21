@@ -117,6 +117,18 @@ def resolve_store_id(store_name_raw, stores, store_aliases):
     return sid, sname, score
 
 
+def resolve_category_id(cfg, categories):
+    if cfg.get("category_id") is not None:
+        return cfg["category_id"]
+
+    category_name = cfg.get("category_name")
+    if category_name and categories:
+        cat_match = [c for c in categories if c.get("name") == category_name]
+        if cat_match:
+            return cat_match[0]["id"]
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("result_json", help="вывод parse_daily.py")
@@ -135,22 +147,17 @@ def main():
 
     client = CrmClient(cfg["base_url"], cfg["email"], cfg["password"])
 
-    if not args.dry_run:
-        client.login()
-        categories = client.get_categories()
-        stores = client.get_stores()
-    else:
-        categories, stores = [], []
-        log("[DRY-RUN] логин и справочники не запрашиваю (нет смысла без реальных данных)")
+    client.login()
+    categories = client.get_categories()
+    stores = client.get_stores()
+    if args.dry_run:
+        log("[DRY-RUN] справочники загружены, товары не создаю")
 
-    category_id = None
-    if categories:
-        cat_match = [c for c in categories if c.get("name") == cfg.get("category_name")]
-        if cat_match:
-            category_id = cat_match[0]["id"]
-            log(f"Категория '{cfg['category_name']}' -> id={category_id}")
-        else:
-            log(f"!!! Категория '{cfg['category_name']}' не найдена в /categories/active — проверь название")
+    category_id = resolve_category_id(cfg, categories)
+    if category_id is not None:
+        log(f"Категория -> id={category_id}")
+    else:
+        log("!!! categoryId не найден — добавь category_id в config.json")
 
     report = []
     skipped = 0
@@ -162,6 +169,10 @@ def main():
             continue
         if card.get("price") is None or card.get("originalPrice") is None:
             report.append({**card, "result": "skipped", "reason": "нет цены/originalPrice — нужна ручная правка"})
+            skipped += 1
+            continue
+        if category_id is None:
+            report.append({**card, "result": "skipped", "reason": "нет categoryId в config.json"})
             skipped += 1
             continue
         if card.get("needsReview") and not args.force:
@@ -199,19 +210,18 @@ def main():
         payload = {
             "name": card["name"],
             "description": card.get("description", ""),
-            "price": card["price"],
             "originalPrice": card["originalPrice"],
             "discountPercentage": card.get("discountPercentage", 0),
             "stockQuantity": card.get("stockQuantity", 1),
             "storeId": store_id,
             "categoryId": category_id,
             "images": [image_url] if image_url else [],
-            "expiryDate": card["expiryDate"],
             "status": card.get("status", "AVAILABLE"),
+            "active": True,
         }
 
         if args.dry_run:
-            log(f"[DRY-RUN] would POST /products: {payload['name']} | store={store_id} cat={category_id} price={payload['price']}/{payload['originalPrice']} img={image_url}")
+            log(f"[DRY-RUN] would POST /products: {payload['name']} | store={store_id} cat={category_id} original={payload['originalPrice']} discount={payload['discountPercentage']} img={image_url}")
             report.append({**card, "result": "dry-run", "payload": payload})
             continue
 
@@ -220,7 +230,7 @@ def main():
             if r.status_code in (200, 201):
                 report.append({**card, "result": "ok", "response": r.json()})
             else:
-                report.append({**card, "result": "failed", "status_code": r.status_code, "response_text": r.text})
+                report.append({**card, "result": "failed", "status_code": r.status_code, "response_text": r.text, "payload": payload})
         except Exception as e:
             report.append({**card, "result": "error", "reason": str(e)})
 
