@@ -1,0 +1,256 @@
+# -*- coding: utf-8 -*-
+"""Local web UI for parsing Pâté WhatsApp messages."""
+import json
+import mimetypes
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+from parse_daily import process
+from upload_to_crm import CrmClient, resolve_store_id
+
+
+ROOT = Path(__file__).resolve().parent
+WEB_DIR = ROOT / "web"
+CATALOG_PATH = ROOT / "catalog_paste.json"
+CONFIG_PATH = ROOT / "config.json"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+
+
+def load_catalog():
+    with open(CATALOG_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_config():
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError("config.json не найден. Скопируй config.example.json в config.json и впиши CRM-доступы.")
+    with open(CONFIG_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+CATALOG = load_catalog()
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "PateParser/1.0"
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        if path == "/":
+            path = "/index.html"
+
+        if path.startswith("/images/"):
+            return self.serve_file(ROOT / path.lstrip("/"))
+
+        return self.serve_file(WEB_DIR / path.lstrip("/"))
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/parse":
+            return self.handle_parse()
+        if parsed.path == "/api/upload":
+            return self.handle_upload()
+        self.send_json({"error": "not found"}, status=404)
+
+    def handle_parse(self):
+        try:
+            payload = self.read_json()
+            raw_text = payload.get("text", "")
+            if not raw_text.strip():
+                return self.send_json({"error": "empty text"}, status=400)
+
+            items = process(raw_text, CATALOG)
+            ok_count = sum(1 for item in items if not item.get("needsReview"))
+            review_count = sum(1 for item in items if item.get("needsReview"))
+            store_count = len({item.get("storeName") for item in items if item.get("storeName")})
+            return self.send_json(
+                {
+                    "items": items,
+                    "summary": {
+                        "total": len(items),
+                        "ok": ok_count,
+                        "review": review_count,
+                        "stores": store_count,
+                    },
+                }
+            )
+        except Exception as exc:
+            return self.send_json({"error": str(exc)}, status=500)
+
+    def handle_upload(self):
+        try:
+            payload = self.read_json()
+            items = payload.get("items", [])
+            dry_run = bool(payload.get("dryRun", False))
+            force = bool(payload.get("force", False))
+            if not items:
+                return self.send_json({"error": "empty items"}, status=400)
+
+            report = upload_cards(items, dry_run=dry_run, force=force)
+            return self.send_json(report)
+        except Exception as exc:
+            return self.send_json({"error": str(exc)}, status=500)
+
+    def read_json(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length).decode("utf-8")
+        return json.loads(raw or "{}")
+
+    def serve_file(self, path):
+        try:
+            resolved = path.resolve()
+            if not (str(resolved).startswith(str(WEB_DIR.resolve())) or str(resolved).startswith(str((ROOT / "images").resolve()))):
+                return self.send_error(403)
+            if not resolved.is_file():
+                return self.send_error(404)
+
+            content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+            data = resolved.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except OSError:
+            self.send_error(404)
+
+    def send_json(self, payload, status=200):
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, fmt, *args):
+        print("%s - %s" % (self.address_string(), fmt % args))
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    args = parser.parse_args()
+
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Web UI: http://{args.host}:{args.port}")
+    print("Press Ctrl+C to stop.")
+    server.serve_forever()
+
+
+def upload_cards(cards, dry_run=False, force=False):
+    cfg = load_config()
+    images_dir = ROOT / cfg.get("images_dir", "./images")
+    store_aliases = cfg.get("store_aliases", {})
+    client = CrmClient(cfg["base_url"], cfg["email"], cfg["password"])
+
+    categories = []
+    stores = []
+    if not dry_run:
+        client.login()
+        categories = client.get_categories()
+        stores = client.get_stores()
+
+    category_id = None
+    if categories:
+        category_name = cfg.get("category_name")
+        match = [c for c in categories if c.get("name") == category_name]
+        if match:
+            category_id = match[0]["id"]
+
+    report = []
+    for card in cards:
+        result = upload_one_card(
+            card=card,
+            client=client,
+            category_id=category_id,
+            stores=stores,
+            store_aliases=store_aliases,
+            images_dir=images_dir,
+            dry_run=dry_run,
+            force=force,
+        )
+        report.append(result)
+
+    ok = sum(1 for item in report if item["result"] in {"ok", "dry-run"})
+    skipped = sum(1 for item in report if item["result"] == "skipped")
+    failed = sum(1 for item in report if item["result"] in {"failed", "error"})
+    return {
+        "summary": {
+            "total": len(report),
+            "ok": ok,
+            "skipped": skipped,
+            "failed": failed,
+            "dryRun": dry_run,
+        },
+        "report": report,
+    }
+
+
+def upload_one_card(card, client, category_id, stores, store_aliases, images_dir, dry_run=False, force=False):
+    label = card.get("name") or card.get("rawLine_name") or card.get("rawLine") or "unknown"
+    if card.get("error"):
+        return {"result": "skipped", "name": label, "reason": "не распознана строка"}
+    if card.get("price") is None or card.get("originalPrice") is None:
+        return {"result": "skipped", "name": label, "reason": "нет цены/originalPrice"}
+    if card.get("needsReview") and not force:
+        return {"result": "skipped", "name": label, "reason": "needsReview=true"}
+
+    store_id = card.get("storeId")
+    store_label = card.get("storeName", "")
+    store_match = None
+    if store_id is None and stores:
+        sid, sname, score = resolve_store_id(store_label, stores, store_aliases)
+        if sid and score >= 0.5:
+            store_id = sid
+            store_match = {"id": sid, "name": sname, "score": round(score, 2)}
+        else:
+            return {"result": "failed", "name": label, "reason": f"не нашли storeId для точки '{store_label}'"}
+
+    image_url = None
+    local_images = card.get("images", [])
+    if local_images:
+        local_path = images_dir / local_images[0]
+        if dry_run:
+            image_url = f"[DRY-RUN]{local_path}"
+        elif local_path.exists():
+            image_url = client.upload_image(str(local_path))
+
+    payload = {
+        "name": card["name"],
+        "description": card.get("description", ""),
+        "price": card["price"],
+        "originalPrice": card["originalPrice"],
+        "discountPercentage": card.get("discountPercentage", 0),
+        "stockQuantity": card.get("stockQuantity", 1),
+        "storeId": store_id,
+        "categoryId": category_id,
+        "images": [image_url] if image_url else [],
+        "expiryDate": card["expiryDate"],
+        "status": card.get("status", "AVAILABLE"),
+    }
+
+    if dry_run:
+        return {"result": "dry-run", "name": label, "payload": payload, "storeMatch": store_match}
+
+    try:
+        response = client.create_product(payload)
+        if response.status_code in (200, 201):
+            return {"result": "ok", "name": label, "response": response.json(), "storeMatch": store_match}
+        return {
+            "result": "failed",
+            "name": label,
+            "status_code": response.status_code,
+            "response_text": response.text,
+        }
+    except Exception as exc:
+        return {"result": "error", "name": label, "reason": str(exc)}
+
+
+if __name__ == "__main__":
+    main()

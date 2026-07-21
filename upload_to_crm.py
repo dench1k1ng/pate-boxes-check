@@ -1,0 +1,239 @@
+# -*- coding: utf-8 -*-
+"""
+Соединяет результат parse_daily.py с реальной CRM:
+  1) логинится (POST /api/auth/login), хранит accessToken/refreshToken
+  2) подтягивает справочники /api/categories/active и /api/stores/active,
+     резолвит categoryId и storeId по имени (без ручного хардкода id)
+  3) для каждой карточки заливает локальную картинку (POST /api/upload/image)
+  4) создаёт товар (POST /api/products)
+  5) если accessToken истёк (401) — обновляет через /api/auth/refresh-token и повторяет запрос
+  6) пишет отчёт report.json (что создалось, что упало, с текстом ошибки)
+
+ЗАПУСК:
+    python3 upload_to_crm.py result.json --config config.json
+    python3 upload_to_crm.py result.json --config config.json --dry-run   # ничего не отправляет, только показывает план
+    python3 upload_to_crm.py result.json --config config.json --force    # включить и needsReview-позиции
+
+result.json — то, что выводит parse_daily.py (можно просто перенаправить >result.json)
+"""
+import argparse
+import json
+import os
+import sys
+import time
+from difflib import SequenceMatcher
+
+import requests
+
+
+def log(msg):
+    print(msg, file=sys.stderr)
+
+
+class CrmClient:
+    def __init__(self, base_url, email, password):
+        self.base_url = base_url.rstrip("/")
+        self.email = email
+        self.password = password
+        self.access_token = None
+        self.refresh_token = None
+
+    def login(self):
+        r = requests.post(f"{self.base_url}/auth/login", json={
+            "email": self.email, "password": self.password
+        }, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        self.access_token = data["accessToken"]
+        self.refresh_token = data["refreshToken"]
+        log("Логин ок.")
+
+    def refresh(self):
+        r = requests.post(f"{self.base_url}/auth/refresh-token", headers={
+            "Authorization": f"Bearer {self.refresh_token}"
+        }, timeout=20)
+        r.raise_for_status()
+        data = r.json()
+        self.access_token = data["accessToken"]
+        self.refresh_token = data.get("refreshToken", self.refresh_token)
+        log("Токен обновлён.")
+
+    def _auth_headers(self):
+        return {"Authorization": f"Bearer {self.access_token}"}
+
+    def _request_with_retry(self, method, path, **kwargs):
+        url = f"{self.base_url}{path}"
+        headers = kwargs.pop("headers", {})
+        headers.update(self._auth_headers())
+        r = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+        if r.status_code == 401:
+            log("401 — обновляю токен и повторяю запрос...")
+            self.refresh()
+            headers.update(self._auth_headers())
+            r = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+        return r
+
+    def get_categories(self):
+        r = self._request_with_retry("GET", "/categories/active")
+        r.raise_for_status()
+        return r.json()
+
+    def get_stores(self):
+        r = self._request_with_retry("GET", "/stores/active")
+        r.raise_for_status()
+        return r.json()
+
+    def upload_image(self, filepath):
+        with open(filepath, "rb") as f:
+            files = {"file": (os.path.basename(filepath), f, "image/jpeg")}
+            r = self._request_with_retry("POST", "/upload/image", files=files)
+        r.raise_for_status()
+        return r.json()["url"]
+
+    def create_product(self, payload):
+        r = self._request_with_retry("POST", "/products", json=payload)
+        return r
+
+
+def best_name_match(target, candidates_with_names):
+    """candidates_with_names: список (id, name). Возвращает (id, name, score) лучшего совпадения."""
+    target_n = target.lower().strip()
+    best = (None, None, 0.0)
+    for cid, cname in candidates_with_names:
+        score = SequenceMatcher(None, target_n, cname.lower().strip()).ratio()
+        if target_n in cname.lower() or cname.lower() in target_n:
+            score = max(score, 0.9)
+        if score > best[2]:
+            best = (cid, cname, score)
+    return best
+
+
+def resolve_store_id(store_name_raw, stores, store_aliases):
+    key = store_name_raw.lower().strip()
+    alias = store_aliases.get(key)
+    candidates = [(s["id"], s["name"]) for s in stores]
+    target = alias if alias else store_name_raw
+    sid, sname, score = best_name_match(target, candidates)
+    return sid, sname, score
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("result_json", help="вывод parse_daily.py")
+    ap.add_argument("--config", default="config.json")
+    ap.add_argument("--dry-run", action="store_true", help="ничего не отправлять, только показать план")
+    ap.add_argument("--force", action="store_true", help="включить и needsReview-позиции")
+    args = ap.parse_args()
+
+    with open(args.config, encoding="utf-8") as f:
+        cfg = json.load(f)
+    with open(args.result_json, encoding="utf-8") as f:
+        cards = json.load(f)
+
+    images_dir = cfg.get("images_dir", "./images")
+    store_aliases = cfg.get("store_aliases", {})
+
+    client = CrmClient(cfg["base_url"], cfg["email"], cfg["password"])
+
+    if not args.dry_run:
+        client.login()
+        categories = client.get_categories()
+        stores = client.get_stores()
+    else:
+        categories, stores = [], []
+        log("[DRY-RUN] логин и справочники не запрашиваю (нет смысла без реальных данных)")
+
+    category_id = None
+    if categories:
+        cat_match = [c for c in categories if c.get("name") == cfg.get("category_name")]
+        if cat_match:
+            category_id = cat_match[0]["id"]
+            log(f"Категория '{cfg['category_name']}' -> id={category_id}")
+        else:
+            log(f"!!! Категория '{cfg['category_name']}' не найдена в /categories/active — проверь название")
+
+    report = []
+    skipped = 0
+
+    for card in cards:
+        if card.get("error"):
+            report.append({**card, "result": "skipped", "reason": "не распознана строка изначально"})
+            skipped += 1
+            continue
+        if card.get("price") is None or card.get("originalPrice") is None:
+            report.append({**card, "result": "skipped", "reason": "нет цены/originalPrice — нужна ручная правка"})
+            skipped += 1
+            continue
+        if card.get("needsReview") and not args.force:
+            report.append({**card, "result": "skipped", "reason": "needsReview=true (запусти с --force чтобы включить)"})
+            skipped += 1
+            continue
+
+        # storeId
+        store_id = card.get("storeId")
+        store_label = card.get("storeName", "")
+        if store_id is None and stores:
+            sid, sname, score = resolve_store_id(store_label, stores, store_aliases)
+            if sid and score >= 0.5:
+                store_id = sid
+                log(f"  точка '{store_label}' -> '{sname}' (id={sid}, score={score:.2f})")
+            else:
+                report.append({**card, "result": "failed", "reason": f"не нашли storeId для точки '{store_label}'"})
+                continue
+
+        # картинка
+        image_url = None
+        local_images = card.get("images", [])
+        if local_images:
+            local_path = os.path.join(images_dir, local_images[0])
+            if args.dry_run:
+                image_url = f"[DRY-RUN]{local_path}"
+            elif os.path.exists(local_path):
+                try:
+                    image_url = client.upload_image(local_path)
+                except Exception as e:
+                    log(f"  !!! не удалось залить картинку {local_path}: {e}")
+            else:
+                log(f"  !!! локальный файл не найден: {local_path}")
+
+        payload = {
+            "name": card["name"],
+            "description": card.get("description", ""),
+            "price": card["price"],
+            "originalPrice": card["originalPrice"],
+            "discountPercentage": card.get("discountPercentage", 0),
+            "stockQuantity": card.get("stockQuantity", 1),
+            "storeId": store_id,
+            "categoryId": category_id,
+            "images": [image_url] if image_url else [],
+            "expiryDate": card["expiryDate"],
+            "status": card.get("status", "AVAILABLE"),
+        }
+
+        if args.dry_run:
+            log(f"[DRY-RUN] would POST /products: {payload['name']} | store={store_id} cat={category_id} price={payload['price']}/{payload['originalPrice']} img={image_url}")
+            report.append({**card, "result": "dry-run", "payload": payload})
+            continue
+
+        try:
+            r = client.create_product(payload)
+            if r.status_code in (200, 201):
+                report.append({**card, "result": "ok", "response": r.json()})
+            else:
+                report.append({**card, "result": "failed", "status_code": r.status_code, "response_text": r.text})
+        except Exception as e:
+            report.append({**card, "result": "error", "reason": str(e)})
+
+        time.sleep(0.2)  # не долбим API слишком часто
+
+    ok = sum(1 for r in report if r["result"] == "ok")
+    failed = sum(1 for r in report if r["result"] in ("failed", "error"))
+    log(f"\n--- ИТОГО: успешно={ok}, ошибок={failed}, пропущено={skipped}, всего={len(cards)} ---")
+
+    with open("report.json", "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    log("Полный отчёт: report.json")
+
+
+if __name__ == "__main__":
+    main()

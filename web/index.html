@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pâté CRM Preview</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Pâté → FoodSave CRM</p>
+          <h1>Предпросмотр WhatsApp-списка</h1>
+        </div>
+        <div class="status-pill" id="status">Готов к парсингу</div>
+      </header>
+
+      <section class="workspace">
+        <section class="input-panel">
+          <div class="panel-head">
+            <h2>Сообщение</h2>
+            <button class="ghost" id="sampleBtn" type="button">Пример</button>
+          </div>
+          <textarea id="messageInput" spellcheck="false" placeholder="Пате Ишим: 40%
+улитка 2 шт
+слойка творог 4 шт"></textarea>
+          <div class="actions">
+            <button id="parseBtn" type="button">Обработать</button>
+            <button class="secondary" id="clearBtn" type="button">Очистить</button>
+          </div>
+          <p class="note">
+            ИИ-ключ не нужен: сейчас работает локальный parser + каталог. Все сомнительные позиции попадут в проверку.
+          </p>
+        </section>
+
+        <section class="review-panel">
+          <div class="metrics">
+            <div>
+              <span id="totalCount">0</span>
+              <p>Всего</p>
+            </div>
+            <div>
+              <span id="okCount">0</span>
+              <p>Готово</p>
+            </div>
+            <div>
+              <span id="reviewCount">0</span>
+              <p>Проверить</p>
+            </div>
+          </div>
+
+          <div class="tabs" role="tablist">
+            <button class="tab active" data-filter="all" type="button">Все</button>
+            <button class="tab" data-filter="ok" type="button">Сделал сам</button>
+            <button class="tab" data-filter="review" type="button">Надо проверить</button>
+          </div>
+
+          <div class="crm-actions">
+            <button class="secondary" id="dryRunBtn" type="button" disabled>Проверить payload</button>
+            <button id="sendCrmBtn" type="button" disabled>Отправить в CRM</button>
+          </div>
+
+          <div class="upload-report" id="uploadReport" hidden></div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Статус</th>
+                  <th>Точка</th>
+                  <th>Что распознал</th>
+                  <th>Цена</th>
+                  <th>Кол-во</th>
+                  <th>Причина</th>
+                </tr>
+              </thead>
+              <tbody id="itemsBody">
+                <tr class="empty">
+                  <td colspan="6">Вставь список слева и нажми «Обработать».</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
