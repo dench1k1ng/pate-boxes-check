@@ -42,6 +42,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             path = "/index.html"
 
+        if parsed.path == "/api/images":
+            return self.handle_images()
+
         if path.startswith("/images/"):
             return self.serve_file(ROOT / path.lstrip("/"))
 
@@ -91,6 +94,18 @@ class Handler(BaseHTTPRequestHandler):
 
             report = upload_cards(items, dry_run=dry_run, force=force)
             return self.send_json(report)
+        except Exception as exc:
+            return self.send_json({"error": str(exc)}, status=500)
+
+    def handle_images(self):
+        try:
+            image_dir = ROOT / "images"
+            files = []
+            if image_dir.exists():
+                files = sorted(
+                    [entry.name for entry in image_dir.iterdir() if entry.is_file() and not entry.name.startswith(".")]
+                )
+            return self.send_json({"images": files})
         except Exception as exc:
             return self.send_json({"error": str(exc)}, status=500)
 
@@ -153,15 +168,13 @@ def upload_cards(cards, dry_run=False, force=False):
     categories = client.get_categories()
     stores = client.get_stores()
 
-    category_id, category_match = resolve_category(cfg, categories)
-
     report = []
     for card in cards:
         result = upload_one_card(
             card=card,
             client=client,
-            category_id=category_id,
-            category_match=category_match,
+            cfg=cfg,
+            categories=categories,
             stores=stores,
             store_aliases=store_aliases,
             images_dir=images_dir,
@@ -199,7 +212,42 @@ def resolve_category(cfg, categories):
     return None, None
 
 
-def upload_one_card(card, client, category_id, category_match, stores, store_aliases, images_dir, dry_run=False, force=False):
+def resolve_category_for_card(card, cfg, categories):
+    card_category_id = card.get("categoryId")
+    if card_category_id is not None:
+        match = next((c for c in categories if c.get("id") == card_category_id), None)
+        return card_category_id, {"id": card_category_id, "name": match.get("name") if match else card.get("categoryName")}
+
+    card_category_name = (card.get("categoryName") or "").strip()
+    if card_category_name and categories:
+        match = next((c for c in categories if c.get("name") == card_category_name), None)
+        if match:
+            return match["id"], {"id": match["id"], "name": match.get("name")}
+
+    return resolve_category(cfg, categories)
+
+
+def prepare_images(card, client, images_dir, dry_run=False):
+    prepared = []
+    for entry in card.get("images", []) or []:
+        if not entry:
+            continue
+        if isinstance(entry, str) and entry.startswith(("http://", "https://")):
+            prepared.append(entry)
+            continue
+
+        local_path = images_dir / entry
+        if dry_run:
+            prepared.append(f"[DRY-RUN]{local_path}")
+        elif local_path.exists():
+            try:
+                prepared.append(client.upload_image(str(local_path)))
+            except Exception:
+                continue
+    return prepared
+
+
+def upload_one_card(card, client, cfg, categories, stores, store_aliases, images_dir, dry_run=False, force=False):
     label = card.get("name") or card.get("rawLine_name") or card.get("rawLine") or "unknown"
     if card.get("error"):
         return {"result": "skipped", "name": label, "reason": "не распознана строка"}
@@ -207,9 +255,6 @@ def upload_one_card(card, client, category_id, category_match, stores, store_ali
         return {"result": "skipped", "name": label, "reason": "нет цены/originalPrice"}
     if card.get("needsReview") and not force:
         return {"result": "skipped", "name": label, "reason": "needsReview=true"}
-    if category_id is None:
-        return {"result": "skipped", "name": label, "reason": "нет categoryId в config.json"}
-
     store_id = card.get("storeId")
     store_label = card.get("storeName", "")
     store_match = None
@@ -221,17 +266,11 @@ def upload_one_card(card, client, category_id, category_match, stores, store_ali
         else:
             return {"result": "failed", "name": label, "reason": f"не нашли storeId для точки '{store_label}'"}
 
-    image_url = None
-    local_images = card.get("images", [])
-    if local_images:
-        local_path = images_dir / local_images[0]
-        if dry_run:
-            image_url = f"[DRY-RUN]{local_path}"
-        elif local_path.exists():
-            try:
-                image_url = client.upload_image(str(local_path))
-            except Exception:
-                image_url = None
+    category_id, category_match = resolve_category_for_card(card, cfg, categories)
+    if category_id is None:
+        return {"result": "skipped", "name": label, "reason": "нет categoryId/categoryName"}
+
+    image_urls = prepare_images(card, client, images_dir, dry_run=dry_run)
 
     payload = {
         "name": card["name"],
@@ -241,7 +280,7 @@ def upload_one_card(card, client, category_id, category_match, stores, store_ali
         "stockQuantity": card.get("stockQuantity", 1),
         "storeId": store_id,
         "categoryId": category_id,
-        "images": [image_url] if image_url else [],
+        "images": image_urls,
         "expiryDate": card.get("expiryDate"),
         "expirationDate": card.get("expiryDate"),
         "status": card.get("status", "AVAILABLE"),

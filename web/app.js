@@ -13,10 +13,35 @@ const els = {
   dryRunBtn: document.querySelector("#dryRunBtn"),
   sendCrmBtn: document.querySelector("#sendCrmBtn"),
   uploadReport: document.querySelector("#uploadReport"),
+  editor: document.querySelector("#itemEditor"),
+  editorTitle: document.querySelector("#editorTitle"),
+  editorForm: document.querySelector("#editorForm"),
+  editorCloseBtn: document.querySelector("#editorCloseBtn"),
+  editorSaveBtn: document.querySelector("#editorSaveBtn"),
+  editorConfirmBtn: document.querySelector("#editorConfirmBtn"),
+  editorReasons: document.querySelector("#editorReasons"),
+  editName: document.querySelector("#editName"),
+  editStore: document.querySelector("#editStore"),
+  editCategory: document.querySelector("#editCategory"),
+  editStatus: document.querySelector("#editStatus"),
+  editPrice: document.querySelector("#editPrice"),
+  editOriginalPrice: document.querySelector("#editOriginalPrice"),
+  editDiscount: document.querySelector("#editDiscount"),
+  editQuantity: document.querySelector("#editQuantity"),
+  editImages: document.querySelector("#editImages"),
+  editImageSearch: document.querySelector("#editImageSearch"),
+  imageGrid: document.querySelector("#imageGrid"),
+  selectedImages: document.querySelector("#selectedImages"),
+  imageCount: document.querySelector("#imageCount"),
+  editDescription: document.querySelector("#editDescription"),
+  editReady: document.querySelector("#editReady"),
 };
 
 let items = [];
 let filter = "all";
+let editingIndex = null;
+let availableImages = [];
+let editorImageSelection = [];
 
 const sample = `Пате Ишим: 40%
 улитка 2 шт
@@ -38,6 +63,23 @@ function setStatus(text, tone = "idle") {
 
 function money(value) {
   return typeof value === "number" ? `${value.toLocaleString("ru-RU")} ₸` : "нет";
+}
+
+function splitList(value) {
+  return String(value || "")
+    .split(/[\n,;]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function imageFileLabel(value) {
+  return String(value || "").split("/").pop();
+}
+
+function numberValue(input, fallback = null) {
+  if (input.value === "") return fallback;
+  const value = Number(input.value);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function tomorrowDateValue() {
@@ -71,6 +113,44 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+function syncImageInput() {
+  els.editImages.value = editorImageSelection.join(", ");
+}
+
+function normalizeSelectionFromInput() {
+  editorImageSelection = splitList(els.editImages.value);
+}
+
+function renderImagePicker() {
+  const query = (els.editImageSearch?.value || "").trim().toLowerCase();
+  const selectedSet = new Set(editorImageSelection);
+  const images = availableImages.filter((file) => {
+    if (!query) return true;
+    return file.toLowerCase().includes(query);
+  });
+
+  els.imageCount.textContent = `${images.length}`;
+  els.selectedImages.innerHTML = editorImageSelection.length
+    ? editorImageSelection
+        .map((file) => `<span class="image-chip">${escapeHtml(imageFileLabel(file))}<button type="button" data-remove-image="${escapeHtml(file)}" aria-label="Удалить ${escapeHtml(imageFileLabel(file))}">×</button></span>`)
+        .join("")
+    : `<span class="muted">Ничего не выбрано</span>`;
+
+  els.imageGrid.innerHTML = images.length
+    ? images
+        .map((file) => {
+          const selected = selectedSet.has(file);
+          return `
+            <button class="image-tile ${selected ? "selected" : ""}" type="button" data-image-file="${escapeHtml(file)}" title="${escapeHtml(file)}">
+              <img src="/images/${encodeURIComponent(file)}" alt="">
+              <span>${escapeHtml(imageFileLabel(file))}</span>
+            </button>
+          `;
+        })
+        .join("")
+    : `<div class="empty-images">Ничего не найдено</div>`;
+}
+
 function imageCell(item) {
   const src = item.images?.[0] ? `/images/${item.images[0]}` : "";
   const image = src
@@ -99,11 +179,13 @@ function reasonCell(item) {
 }
 
 function render() {
-  const visible = items.filter((item) => {
-    if (filter === "ok") return !item.needsReview;
-    if (filter === "review") return item.needsReview;
-    return true;
-  });
+  const visible = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => {
+      if (filter === "ok") return !item.needsReview;
+      if (filter === "review") return item.needsReview;
+      return true;
+    });
 
   els.total.textContent = items.length;
   els.ok.textContent = items.filter((item) => !item.needsReview).length;
@@ -117,12 +199,12 @@ function render() {
   }
 
   els.body.innerHTML = visible
-    .map((item) => {
+    .map(({ item, index }) => {
       const badge = item.needsReview
         ? `<span class="badge review">Проверить</span>`
         : `<span class="badge ok">Сделал сам</span>`;
       return `
-        <tr>
+        <tr class="item-row" data-index="${index}" tabindex="0" title="Открыть правку карточки">
           <td>${badge}</td>
           <td>${escapeHtml(item.storeName || "")}</td>
           <td>${imageCell(item)}</td>
@@ -133,6 +215,79 @@ function render() {
       `;
     })
     .join("");
+}
+
+function openEditor(index) {
+  const item = items[index];
+  if (!item) return;
+
+  editingIndex = index;
+  els.editorTitle.textContent = item.name || item.matchedCanonical || item.rawLine_name || "Товар";
+  els.editName.value = item.name || item.matchedCanonical || item.rawLine_name || "";
+  els.editStore.value = item.storeName || "";
+  els.editCategory.value = item.categoryName || "";
+  els.editStatus.value = item.status || "AVAILABLE";
+  els.editPrice.value = item.price ?? "";
+  els.editOriginalPrice.value = item.originalPrice ?? "";
+  els.editDiscount.value = item.discountPercentage ?? "";
+  els.editQuantity.value = item.stockQuantity ?? 1;
+  editorImageSelection = Array.isArray(item.images) ? [...item.images] : [];
+  syncImageInput();
+  els.editDescription.value = item.description || "";
+  els.editReady.checked = !item.needsReview;
+
+  const reasons = item.reviewReasons || [];
+  els.editorReasons.innerHTML = reasons.length
+    ? reasons.map((reason) => `<span class="reason">${escapeHtml(reason)}</span>`).join("")
+    : `<span class="muted">Причин проверки нет</span>`;
+
+  renderImagePicker();
+  els.editor.showModal();
+  els.editName.focus();
+}
+
+function closeEditor() {
+  editingIndex = null;
+  els.editor.close();
+}
+
+function saveEditor(confirmReady = false) {
+  if (editingIndex === null || !items[editingIndex]) return;
+  if (!els.editorForm.reportValidity()) return;
+
+  const originalPrice = numberValue(els.editOriginalPrice);
+  const price = numberValue(els.editPrice);
+  let discountPercentage = numberValue(els.editDiscount, 0);
+  if (price !== null && originalPrice) {
+    discountPercentage = Math.round((1 - price / originalPrice) * 100);
+  }
+
+  const ready = confirmReady || els.editReady.checked;
+  const previous = items[editingIndex];
+  const reviewReasons = ready ? [] : previous.reviewReasons?.length ? previous.reviewReasons : ["ручная проверка"];
+  const images = splitList(els.editImages.value);
+  items[editingIndex] = {
+    ...previous,
+    name: els.editName.value.trim(),
+    storeName: els.editStore.value.trim(),
+    categoryName: els.editCategory.value.trim(),
+    status: els.editStatus.value,
+    price,
+    originalPrice,
+    discountPercentage,
+    stockQuantity: numberValue(els.editQuantity, 1),
+    images,
+    description: els.editDescription.value.trim(),
+    needsReview: !ready,
+    reviewReasons,
+    manuallyEdited: true,
+  };
+
+  items = applyExpiryDate(items);
+  els.uploadReport.hidden = true;
+  closeEditor();
+  render();
+  setStatus(ready ? "Карточка сохранена и готова к CRM" : "Карточка сохранена", "ok");
 }
 
 function renderUploadReport(data) {
@@ -258,5 +413,75 @@ els.tabs.forEach((tab) => {
   });
 });
 
+els.body.addEventListener("click", (event) => {
+  const row = event.target.closest(".item-row");
+  if (!row) return;
+  openEditor(Number(row.dataset.index));
+});
+
+els.body.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const row = event.target.closest(".item-row");
+  if (!row) return;
+  event.preventDefault();
+  openEditor(Number(row.dataset.index));
+});
+
+els.editorCloseBtn.addEventListener("click", closeEditor);
+els.editorSaveBtn.addEventListener("click", () => saveEditor(false));
+els.editorConfirmBtn.addEventListener("click", () => saveEditor(true));
+els.editImages.addEventListener("input", () => {
+  normalizeSelectionFromInput();
+  renderImagePicker();
+});
+els.editImageSearch.addEventListener("input", renderImagePicker);
+els.imageGrid.addEventListener("click", (event) => {
+  const tile = event.target.closest("[data-image-file]");
+  if (!tile) return;
+  const file = tile.dataset.imageFile;
+  const index = editorImageSelection.indexOf(file);
+  if (index >= 0) {
+    editorImageSelection.splice(index, 1);
+  } else {
+    editorImageSelection.push(file);
+  }
+  syncImageInput();
+  renderImagePicker();
+});
+els.selectedImages.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-image]");
+  if (!remove) return;
+  const file = remove.dataset.removeImage;
+  editorImageSelection = editorImageSelection.filter((entry) => entry !== file);
+  syncImageInput();
+  renderImagePicker();
+});
+els.editorForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveEditor(false);
+});
+els.editor.addEventListener("click", (event) => {
+  if (event.target === els.editor) closeEditor();
+});
+els.editor.addEventListener("close", () => {
+  editingIndex = null;
+});
+
+async function loadAvailableImages() {
+  try {
+    const response = await fetch("/api/images");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Не удалось загрузить фото");
+    availableImages = data.images || [];
+    renderImagePicker();
+  } catch (error) {
+    availableImages = [];
+    if (els.imageGrid) {
+      els.imageGrid.innerHTML = `<div class="empty-images">${escapeHtml(error.message)}</div>`;
+    }
+  }
+}
+
 els.dryRunBtn.addEventListener("click", () => uploadToCrm(true));
 els.sendCrmBtn.addEventListener("click", () => uploadToCrm(false));
+loadAvailableImages();

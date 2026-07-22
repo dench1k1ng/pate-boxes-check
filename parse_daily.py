@@ -164,6 +164,7 @@ def preprocess_line(line: str) -> str:
     line = line.replace("\u2060", " ").replace("\ufeff", " ")
     line = re.sub(r"[\U00010000-\U0010ffff]", " ", line)
     line = line.lower().replace("ё", "е")
+    line = strip_annotation_tail(line)
     # тысячный разделитель через точку: цифра.три_цифры -> слитно
     line = re.sub(r"(\d)\.(\d{3})\b", r"\1\2", line)
     # убираем скобки с пояснениями: (одна порция), (порция), etc.
@@ -187,6 +188,28 @@ def preprocess_line(line: str) -> str:
     line = re.sub(r"^\d+\.\s*", "", line.strip())
     line = apply_name_replacements(line)
     line = re.sub(r"\s+", " ", line).strip()
+    return line
+
+
+def strip_annotation_tail(line: str) -> str:
+    """Убирает пользовательские пояснения в конце строки вида:
+    '... - нет "вместо", скидка посчитана по умолчанию'.
+
+    Не трогаем реальные названия товаров с дефисом внутри, потому что там
+    дефис обычно не окружён пробелами.
+    """
+    marker = re.search(r"\s-\s", line)
+    if not marker:
+        return line
+
+    tail = line[marker.end():].strip()
+    if not tail:
+        return line[:marker.start()].strip()
+
+    if not re.search(r"\b\d+\b", tail) and (
+        "вместо" in tail or "скидк" in tail or "неоднознач" in tail or "провер" in tail or "нет" in tail
+    ):
+        return line[:marker.start()].strip()
     return line
 
 
@@ -328,7 +351,7 @@ def parse_item_line(line: str, header_discount=None):
         return slash_variants
 
     review_reasons = []
-    if "вместо" in raw:
+    if re.search(r"\bвместо\b\s*\d", raw):
         before, after = raw.split("вместо", 1)
         after = after.strip()
         orig_match = re.search(r"\b\d+\b", after)
@@ -462,6 +485,7 @@ def build_card(store, parsed, catalog, header_discount=None, block_reasons=None,
     desired_size = size or ("порция" if parsed.get("qtyUnit") == "пор" else None)
     match, score, ranked = best_match(name_raw, catalog, original_price=orig, desired_size=desired_size)
     size_label, size_data = find_size_data(match, size, orig, parsed.get("qtyUnit"))
+    catalog_confirmed = bool(match and size_data and orig is not None and size_data.get("price") == orig)
 
     review_reasons = list(dict.fromkeys(block_reasons + parsed.get("reviewReasons", [])))
     if parsed.get("assumedFromCatalog"):
@@ -488,14 +512,18 @@ def build_card(store, parsed, catalog, header_discount=None, block_reasons=None,
 
     if match is None:
         review_reasons.append("нет товара в каталоге")
-    elif score < 0.75:
+    elif score < 0.75 and not catalog_confirmed:
         review_reasons.append("слабый матч")
-    if match and size_data is None:
+    if match and size_data is None and not catalog_confirmed:
         review_reasons.append("не выбран размер")
-    if ranked and len(ranked) > 1 and ranked[0][0] - ranked[1][0] < 0.04:
+    if ranked and len(ranked) > 1 and ranked[0][0] - ranked[1][0] < 0.04 and not catalog_confirmed:
         review_reasons.append("неоднозначный матч")
     if price is None or orig is None:
         review_reasons.append("нет цены")
+    elif parsed.get("assumedDiscount") and not catalog_confirmed:
+        review_reasons.append("нет 'вместо', скидка посчитана по умолчанию")
+    elif parsed.get("assumedDiscount") and catalog_confirmed:
+        review_reasons = [reason for reason in review_reasons if reason != "нет 'вместо', скидка посчитана по умолчанию"]
 
     review_reasons = list(dict.fromkeys(review_reasons))
 

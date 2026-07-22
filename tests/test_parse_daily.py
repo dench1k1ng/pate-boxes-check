@@ -55,6 +55,33 @@ class ParseDailyHeavyInputTest(unittest.TestCase):
         self.assertEqual([x["originalPrice"] for x in out], [5800, 2650])
         self.assertTrue(all(not x["needsReview"] for x in out))
 
+    def test_catalog_confirmed_lines_without_vse_pass(self):
+        out = process(
+            "Ишим\n"
+            "Тарт фисташка малина макси 1 шт 7200\n"
+            "Фисташка малина 7 шт 1380\n"
+            "Меренговый рулет 2 шт 1740\n"
+            "Тарт лимон мини 1 шт 960 тг\n"
+            "Тарт шоколадный мини 2 шт 960 тг",
+            self.catalog,
+        )
+        self.assertEqual(len(out), 5)
+        self.assertEqual([x["matchedCanonical"] for x in out], [
+            "Фисташка-малина тарт",
+            "Фисташка-малина тарт",
+            "Меренговый рулет",
+            "Лимонный тарт",
+            "Шоколадный тарт",
+        ])
+        self.assertTrue(all(not x["needsReview"] for x in out))
+
+    def test_trailing_notes_after_dash_are_ignored(self):
+        card = self.parse_one("Ишим\nМеренговый рулет 2 шт 1740 - нет 'вместо', скидка посчитана по умолчанию")
+        self.assertEqual(card["matchedCanonical"], "Меренговый рулет")
+        self.assertEqual(card["price"], 1740)
+        self.assertEqual(card["originalPrice"], 2900)
+        self.assertFalse(card["needsReview"])
+
 
 if __name__ == "__main__":
     unittest.main()

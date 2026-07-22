@@ -129,6 +129,48 @@ def resolve_category_id(cfg, categories):
     return None
 
 
+def resolve_category_for_card(card, cfg, categories):
+    card_category_id = card.get("categoryId")
+    if card_category_id is not None:
+        match = next((c for c in categories if c.get("id") == card_category_id), None)
+        return card_category_id, {"id": card_category_id, "name": match.get("name") if match else card.get("categoryName")}
+
+    card_category_name = (card.get("categoryName") or "").strip()
+    if card_category_name and categories:
+        match = next((c for c in categories if c.get("name") == card_category_name), None)
+        if match:
+            return match["id"], {"id": match["id"], "name": match.get("name")}
+
+    fallback_id = resolve_category_id(cfg, categories)
+    if fallback_id is not None:
+        match = next((c for c in categories if c.get("id") == fallback_id), None)
+        return fallback_id, {"id": fallback_id, "name": match.get("name") if match else cfg.get("category_name")}
+
+    return None, None
+
+
+def prepare_images(card, client, images_dir, dry_run=False):
+    prepared = []
+    for entry in card.get("images", []) or []:
+        if not entry:
+            continue
+        if isinstance(entry, str) and entry.startswith(("http://", "https://")):
+            prepared.append(entry)
+            continue
+
+        local_path = images_dir / entry
+        if dry_run:
+            prepared.append(f"[DRY-RUN]{local_path}")
+        elif local_path.exists():
+            try:
+                prepared.append(client.upload_image(str(local_path)))
+            except Exception as exc:
+                log(f"  !!! не удалось залить картинку {local_path}: {exc}")
+        else:
+            log(f"  !!! локальный файл не найден: {local_path}")
+    return prepared
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("result_json", help="вывод parse_daily.py")
@@ -153,12 +195,6 @@ def main():
     if args.dry_run:
         log("[DRY-RUN] справочники загружены, товары не создаю")
 
-    category_id = resolve_category_id(cfg, categories)
-    if category_id is not None:
-        log(f"Категория -> id={category_id}")
-    else:
-        log("!!! categoryId не найден — добавь category_id в config.json")
-
     report = []
     skipped = 0
 
@@ -169,10 +205,6 @@ def main():
             continue
         if card.get("price") is None or card.get("originalPrice") is None:
             report.append({**card, "result": "skipped", "reason": "нет цены/originalPrice — нужна ручная правка"})
-            skipped += 1
-            continue
-        if category_id is None:
-            report.append({**card, "result": "skipped", "reason": "нет categoryId в config.json"})
             skipped += 1
             continue
         if card.get("needsReview") and not args.force:
@@ -192,20 +224,13 @@ def main():
                 report.append({**card, "result": "failed", "reason": f"не нашли storeId для точки '{store_label}'"})
                 continue
 
-        # картинка
-        image_url = None
-        local_images = card.get("images", [])
-        if local_images:
-            local_path = os.path.join(images_dir, local_images[0])
-            if args.dry_run:
-                image_url = f"[DRY-RUN]{local_path}"
-            elif os.path.exists(local_path):
-                try:
-                    image_url = client.upload_image(local_path)
-                except Exception as e:
-                    log(f"  !!! не удалось залить картинку {local_path}: {e}")
-            else:
-                log(f"  !!! локальный файл не найден: {local_path}")
+        category_id, category_match = resolve_category_for_card(card, cfg, categories)
+        if category_id is None:
+            report.append({**card, "result": "skipped", "reason": "нет categoryId/categoryName"})
+            skipped += 1
+            continue
+
+        image_urls = prepare_images(card, client, images_dir, dry_run=args.dry_run)
 
         payload = {
             "name": card["name"],
@@ -215,7 +240,7 @@ def main():
             "stockQuantity": card.get("stockQuantity", 1),
             "storeId": store_id,
             "categoryId": category_id,
-            "images": [image_url] if image_url else [],
+            "images": image_urls,
             "expiryDate": card.get("expiryDate"),
             "expirationDate": card.get("expiryDate"),
             "status": card.get("status", "AVAILABLE"),
@@ -227,17 +252,17 @@ def main():
                 f"[DRY-RUN] would POST /products: {payload['name']} | "
                 f"store={store_id} cat={category_id} "
                 f"expiryDate={payload['expiryDate']} expirationDate={payload['expirationDate']} "
-                f"img={image_url}"
+                f"img={image_urls}"
             )
-            report.append({**card, "result": "dry-run", "payload": payload})
+            report.append({**card, "result": "dry-run", "payload": payload, "categoryMatch": category_match})
             continue
 
         try:
             r = client.create_product(payload)
             if r.status_code in (200, 201):
-                report.append({**card, "result": "ok", "response": r.json()})
+                report.append({**card, "result": "ok", "response": r.json(), "categoryMatch": category_match})
             else:
-                report.append({**card, "result": "failed", "status_code": r.status_code, "response_text": r.text, "payload": payload})
+                report.append({**card, "result": "failed", "status_code": r.status_code, "response_text": r.text, "payload": payload, "categoryMatch": category_match})
         except Exception as e:
             report.append({**card, "result": "error", "reason": str(e)})
 
