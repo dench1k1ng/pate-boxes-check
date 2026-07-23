@@ -275,6 +275,7 @@ def upload_one_card(card, client, cfg, categories, stores, store_aliases, images
     payload = {
         "name": card["name"],
         "description": card.get("description", ""),
+        "price": card["price"],
         "originalPrice": card["originalPrice"],
         "discountPercentage": card.get("discountPercentage", 0),
         "stockQuantity": card.get("stockQuantity", 1),

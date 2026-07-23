@@ -235,6 +235,7 @@ def main():
         payload = {
             "name": card["name"],
             "description": card.get("description", ""),
+            "price": card["price"],
             "originalPrice": card["originalPrice"],
             "discountPercentage": card.get("discountPercentage", 0),
             "stockQuantity": card.get("stockQuantity", 1),
@@ -251,6 +252,7 @@ def main():
             log(
                 f"[DRY-RUN] would POST /products: {payload['name']} | "
                 f"store={store_id} cat={category_id} "
+                f"price={payload['price']} originalPrice={payload['originalPrice']} "
                 f"expiryDate={payload['expiryDate']} expirationDate={payload['expirationDate']} "
                 f"img={image_urls}"
             )
