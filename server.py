@@ -13,6 +13,7 @@ from upload_to_crm import CrmClient, resolve_store_id
 ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
 CATALOG_PATH = ROOT / "catalog_paste.json"
+MERGED_CATALOG_PATH = ROOT / "catalog_merged.json"
 CONFIG_PATH = ROOT / "config.json"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -20,7 +21,21 @@ DEFAULT_PORT = 8000
 
 def load_catalog():
     with open(CATALOG_PATH, encoding="utf-8") as f:
-        return json.load(f)
+        catalog = json.load(f)
+
+    if MERGED_CATALOG_PATH.exists():
+        with open(MERGED_CATALOG_PATH, encoding="utf-8") as f:
+            merged = json.load(f)
+        spanish = next((item for item in merged if item.get("canonical") == "Испанский чизкейк"), None)
+        if spanish and not any(item.get("canonical") == "Испанский чизкейк" for item in catalog):
+            spanish = json.loads(json.dumps(spanish))
+            for size_data in spanish.get("sizes", {}).values():
+                image = size_data.get("image")
+                if image and not (ROOT / "images" / image).exists():
+                    size_data["image"] = f"images_from_pdf/{image}"
+            catalog.append(spanish)
+
+    return catalog
 
 
 def load_config():
@@ -46,6 +61,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_images()
 
         if path.startswith("/images/"):
+            return self.serve_file(ROOT / path.lstrip("/"))
+        if path.startswith("/images_from_pdf/"):
             return self.serve_file(ROOT / path.lstrip("/"))
 
         return self.serve_file(WEB_DIR / path.lstrip("/"))
@@ -99,12 +116,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_images(self):
         try:
-            image_dir = ROOT / "images"
+            image_dirs = [ROOT / "images", ROOT / "images_from_pdf"]
             files = []
-            if image_dir.exists():
-                files = sorted(
-                    [entry.name for entry in image_dir.iterdir() if entry.is_file() and not entry.name.startswith(".")]
-                )
+            for image_dir in image_dirs:
+                if image_dir.exists():
+                    rel = image_dir.name
+                    files.extend(
+                        f"{rel}/{entry.name}"
+                        for entry in image_dir.iterdir()
+                        if entry.is_file() and not entry.name.startswith(".")
+                    )
+            files = sorted(files)
             return self.send_json({"images": files})
         except Exception as exc:
             return self.send_json({"error": str(exc)}, status=500)
@@ -117,7 +139,8 @@ class Handler(BaseHTTPRequestHandler):
     def serve_file(self, path):
         try:
             resolved = path.resolve()
-            if not (str(resolved).startswith(str(WEB_DIR.resolve())) or str(resolved).startswith(str((ROOT / "images").resolve()))):
+            allowed_roots = [WEB_DIR.resolve(), (ROOT / "images").resolve(), (ROOT / "images_from_pdf").resolve()]
+            if not any(str(resolved).startswith(str(root)) for root in allowed_roots):
                 return self.send_error(403)
             if not resolved.is_file():
                 return self.send_error(404)
@@ -236,7 +259,7 @@ def prepare_images(card, client, images_dir, dry_run=False):
             prepared.append(entry)
             continue
 
-        local_path = images_dir / entry
+        local_path = images_dir.parent / entry if "/" in entry else images_dir / entry
         if dry_run:
             prepared.append(f"[DRY-RUN]{local_path}")
         elif local_path.exists():

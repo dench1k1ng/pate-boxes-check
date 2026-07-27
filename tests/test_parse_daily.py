@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from parse_daily import process  # noqa: E402
+from server import load_catalog  # noqa: E402
 
 
 class ParseDailyHeavyInputTest(unittest.TestCase):
@@ -80,6 +81,15 @@ class ParseDailyHeavyInputTest(unittest.TestCase):
         self.assertEqual(card["matchedCanonical"], "Меренговый рулет")
         self.assertEqual(card["price"], 1740)
         self.assertEqual(card["originalPrice"], 2900)
+        self.assertFalse(card["needsReview"])
+
+    def test_spanish_cheesecake_comes_from_merged_catalog(self):
+        catalog = load_catalog()
+        out = process("Пате Достык: 40%\nИспанский чизкейк макси 1 шт", catalog)
+        self.assertEqual(len(out), 1)
+        card = out[0]
+        self.assertEqual(card["matchedCanonical"], "Испанский чизкейк")
+        self.assertEqual(card["sizeDetected"], "большой")
         self.assertFalse(card["needsReview"])
 
 

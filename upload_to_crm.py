@@ -158,7 +158,7 @@ def prepare_images(card, client, images_dir, dry_run=False):
             prepared.append(entry)
             continue
 
-        local_path = images_dir / entry
+        local_path = images_dir.parent / entry if "/" in entry else images_dir / entry
         if dry_run:
             prepared.append(f"[DRY-RUN]{local_path}")
         elif local_path.exists():

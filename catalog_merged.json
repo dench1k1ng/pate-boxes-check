@@ -385,15 +385,15 @@
     "description": "заварное тесто, творог, сафар цоколадный карамельный",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 6400,
-        "old_price": 1700,
-        "image": "kolkha_tvorozhnye.jpeg"
-      },
       "большой": {
         "price": 12700,
         "old_price": null,
         "image": null
+      },
+      "мини": {
+        "price": 6400,
+        "old_price": 1700,
+        "image": "kolkha_tvorozhnye.jpeg"
       }
     },
     "is_new_in_catalog": false,
@@ -405,15 +405,15 @@
     "description": "песочное тесто с творожно- сырной начинкой со свежими ягодами",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 2300,
-        "old_price": 2100,
-        "image": null
-      },
       "большой": {
         "price": 21000,
         "old_price": 18000,
         "image": "chizkejk_s_yagodami.jpeg"
+      },
+      "мини": {
+        "price": 2300,
+        "old_price": 2100,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -545,15 +545,15 @@
     "description": "",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 3600,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 7300,
         "old_price": null,
         "image": "vafli.jpeg"
+      },
+      "мини": {
+        "price": 3600,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -565,15 +565,15 @@
     "description": "фрустяшие тонкие, ароматные вафли",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 6000,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 11000,
         "old_price": null,
         "image": "vafli_konusnye.jpeg"
+      },
+      "мини": {
+        "price": 6000,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -600,15 +600,15 @@
     "description": "с творожной начинкой. Тесто на основе тыквенного и яблочного пыре с добавлением корихы, имбиря",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 4500,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 7500,
         "old_price": null,
         "image": "keks_tykvennyj.jpeg"
+      },
+      "мини": {
+        "price": 4500,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -710,15 +710,15 @@
     "description": "печенье на творожном тесте с фрустяшей сафарной посыпкой",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 4700,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 9300,
         "old_price": null,
         "image": "tvorozhnoe.jpeg"
+      },
+      "мини": {
+        "price": 4700,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -760,15 +760,15 @@
     "description": "порхия больцой пирог меренга с творожным сыром, сливочным кремом и вицнёвым конфи порхия больцой пирог",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 2700,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 25000,
         "old_price": null,
         "image": "merengovyj_rulet.jpeg"
+      },
+      "мини": {
+        "price": 2700,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -825,15 +825,15 @@
     "description": "говядина долгого томления с картофелем, соусом бецамель больцой пирог",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 3300,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 13000,
         "old_price": null,
         "image": "argentina_s_govyadinoj.jpeg"
+      },
+      "мини": {
+        "price": 3300,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -845,15 +845,15 @@
     "description": "больцой пирог сдобное тесто, говяжий фарц,",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 3100,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 8800,
         "old_price": null,
         "image": "myasnoj_pirog.jpeg"
+      },
+      "мини": {
+        "price": 3100,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -865,15 +865,15 @@
     "description": "филе лосося со сметанным соусом, яйхами и зеленьы больцой пирог",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 2900,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 12000,
         "old_price": null,
         "image": "skandinavskij_s_lososem.jpeg"
+      },
+      "мини": {
+        "price": 2900,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,
@@ -1005,15 +1005,15 @@
     "description": "3 вида финансье: фистацковое, миндальное, цоколадное 8 орецков: классические, цоколадные",
     "aliases": [],
     "sizes": {
-      "мини": {
-        "price": 1800,
-        "old_price": null,
-        "image": null
-      },
       "большой": {
         "price": 8200,
         "old_price": null,
         "image": "chajnyj_nabor_monro.jpeg"
+      },
+      "мини": {
+        "price": 1800,
+        "old_price": null,
+        "image": null
       }
     },
     "is_new_in_catalog": false,

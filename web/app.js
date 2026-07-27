@@ -76,6 +76,14 @@ function imageFileLabel(value) {
   return String(value || "").split("/").pop();
 }
 
+function imageUrl(value) {
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith("/")) return value;
+  if (value.includes("/")) return `/${value}`;
+  return `/images/${value}`;
+}
+
 function numberValue(input, fallback = null) {
   if (input.value === "") return fallback;
   const value = Number(input.value);
@@ -126,7 +134,7 @@ function renderImagePicker() {
   const selectedSet = new Set(editorImageSelection);
   const images = availableImages.filter((file) => {
     if (!query) return true;
-    return file.toLowerCase().includes(query);
+    return imageFileLabel(file).toLowerCase().includes(query) || file.toLowerCase().includes(query);
   });
 
   els.imageCount.textContent = `${images.length}`;
@@ -142,7 +150,7 @@ function renderImagePicker() {
           const selected = selectedSet.has(file);
           return `
             <button class="image-tile ${selected ? "selected" : ""}" type="button" data-image-file="${escapeHtml(file)}" title="${escapeHtml(file)}">
-              <img src="/images/${encodeURIComponent(file)}" alt="">
+              <img src="${escapeHtml(imageUrl(file))}" alt="">
               <span>${escapeHtml(imageFileLabel(file))}</span>
             </button>
           `;
@@ -152,7 +160,7 @@ function renderImagePicker() {
 }
 
 function imageCell(item) {
-  const src = item.images?.[0] ? `/images/${item.images[0]}` : "";
+  const src = item.images?.[0] ? imageUrl(item.images[0]) : "";
   const image = src
     ? `<img class="thumb" src="${escapeHtml(src)}" alt="">`
     : `<div class="thumb"></div>`;
