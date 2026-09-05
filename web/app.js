@@ -37,13 +37,16 @@ const els = {
   editReady: document.querySelector("#editReady"),
 };
 
+const APP_CONFIG = window.__APP_CONFIG__ || {};
 let items = [];
 let filter = "all";
 let editingIndex = null;
 let availableImages = [];
 let editorImageSelection = [];
+const API_BASE = window.__API_BASE__ || "";
+const API_PREFIX = APP_CONFIG.apiPrefix || "";
 
-const sample = `Пате Ишим: 40%
+const sample = APP_CONFIG.sample || `Пате Ишим: 40%
 улитка 2 шт
 слойка творог 4 шт
 фисташка малина 1 пор
@@ -82,6 +85,26 @@ function imageUrl(value) {
   if (value.startsWith("/")) return value;
   if (value.includes("/")) return `/${value}`;
   return `/images/${value}`;
+}
+
+function apiUrl(path) {
+  const suffix = API_PREFIX ? path.replace(/^\/api/, "") : path;
+  return `${API_BASE}${API_PREFIX}${suffix}`;
+}
+
+async function fetchJson(path, options) {
+  const response = await fetch(apiUrl(path), options);
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const text = await response.text();
+    const preview = text.trim().slice(0, 140).replace(/\s+/g, " ");
+    throw new Error(`API вернул не JSON: ${preview || response.statusText || "unknown response"}`);
+  }
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return data;
 }
 
 function numberValue(input, fallback = null) {
@@ -343,13 +366,11 @@ async function uploadToCrm(dryRun) {
   setStatus(dryRun ? "Проверяю payload..." : "Отправляю в CRM...", "busy");
 
   try {
-    const response = await fetch("/api/upload", {
+    const data = await fetchJson("/api/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items: applyExpiryDate(items), dryRun, force: false }),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Ошибка CRM");
     renderUploadReport(data);
     const summary = data.summary;
     setStatus(
@@ -376,13 +397,11 @@ async function parseMessage() {
   setStatus("Обрабатываю...", "busy");
 
   try {
-    const response = await fetch("/api/parse", {
+    const data = await fetchJson("/api/parse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Ошибка парсинга");
     items = applyExpiryDate(data.items || []);
     els.uploadReport.hidden = true;
     render();
@@ -477,9 +496,7 @@ els.editor.addEventListener("close", () => {
 
 async function loadAvailableImages() {
   try {
-    const response = await fetch("/api/images");
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Не удалось загрузить фото");
+    const data = await fetchJson("/api/images");
     availableImages = data.images || [];
     renderImagePicker();
   } catch (error) {

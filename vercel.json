@@ -1,4 +1,24 @@
 {
+  "functions": {
+    "api/parse.py": {
+      "maxDuration": 30
+    },
+    "api/upload.py": {
+      "maxDuration": 30
+    },
+    "api/images.py": {
+      "maxDuration": 30
+    },
+    "api/tortikipirogi/parse.py": {
+      "maxDuration": 30
+    },
+    "api/tortikipirogi/upload.py": {
+      "maxDuration": 30
+    },
+    "api/tortikipirogi/images.py": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/",
@@ -11,6 +31,26 @@
     {
       "source": "/style.css",
       "destination": "/web/style.css"
+    },
+    {
+      "source": "/tortikipirogi",
+      "destination": "/web/tortikipirogi.html"
+    },
+    {
+      "source": "/tortikipirogi/",
+      "destination": "/web/tortikipirogi.html"
+    },
+    {
+      "source": "/tortikipirogi/app.js",
+      "destination": "/web/app.js"
+    },
+    {
+      "source": "/tortikipirogi/style.css",
+      "destination": "/web/style.css"
+    },
+    {
+      "source": "/tortikipirogi/(.*)",
+      "destination": "/web/$1"
     }
   ]
 }

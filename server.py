@@ -38,10 +38,11 @@ def load_catalog():
     return catalog
 
 
-def load_config():
-    if not CONFIG_PATH.exists():
+def load_config(path=CONFIG_PATH):
+    path = Path(path)
+    if not path.exists():
         raise FileNotFoundError("config.json не найден. Скопируй config.example.json в config.json и впиши CRM-доступы.")
-    with open(CONFIG_PATH, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -181,8 +182,15 @@ def main():
     server.serve_forever()
 
 
-def upload_cards(cards, dry_run=False, force=False):
-    cfg = load_config()
+def upload_cards(cards, dry_run=False, force=False, config_path=None, config_overrides=None):
+    cfg = load_config(config_path or CONFIG_PATH)
+    if config_overrides:
+        cfg = {**cfg, **config_overrides}
+        if "store_aliases" in config_overrides:
+            cfg["store_aliases"] = {
+                **cfg.get("store_aliases", {}),
+                **config_overrides["store_aliases"],
+            }
     images_dir = ROOT / cfg.get("images_dir", "./images")
     store_aliases = cfg.get("store_aliases", {})
     client = CrmClient(cfg["base_url"], cfg["email"], cfg["password"])
