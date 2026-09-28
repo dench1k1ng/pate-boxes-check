@@ -135,8 +135,8 @@ class MaminHlebParserTest(unittest.TestCase):
 
         self.assertEqual([card["name"] for card in cards], ["Бокс 1", "Бокс 2", "Бокс 6"])
         self.assertEqual([card["price"] for card in cards], [1625, 1595, 1500])
-        self.assertTrue(all(card["originalPrice"] == card["price"] for card in cards))
-        self.assertTrue(all(card["discountPercentage"] == 0 for card in cards))
+        self.assertEqual([card["originalPrice"] for card in cards], [3250, 3190, 3000])
+        self.assertTrue(all(card["discountPercentage"] == 50 for card in cards))
         self.assertTrue(all(card["storeName"] == "Royalty Coffee | Сыганак 3" for card in cards))
         self.assertTrue(all(card["categoryName"] == "Кофейня" for card in cards))
         self.assertIn("Орешки со сгущёнкой — 12", cards[-1]["description"])
@@ -152,6 +152,20 @@ class MaminHlebParserTest(unittest.TestCase):
             )
         self.assertEqual(report["report"][0]["payload"]["storeId"], 7)
         self.assertEqual(report["report"][0]["payload"]["categoryId"], 2)
+
+    def test_discounted_price_rule_and_components_with_units(self):
+        cards = process(
+            "Сыганак 3\n"
+            "Бокс 1 - 1200\n"
+            "Круассан - 1 шт\n"
+            "Панини - 1 шт"
+        )
+
+        self.assertEqual(cards[0]["price"], 1200)
+        self.assertEqual(cards[0]["originalPrice"], 2400)
+        self.assertEqual(cards[0]["discountPercentage"], 50)
+        self.assertIn("Круассан — 1", cards[0]["description"])
+        self.assertIn("Панини — 1", cards[0]["description"])
 
 
 if __name__ == "__main__":

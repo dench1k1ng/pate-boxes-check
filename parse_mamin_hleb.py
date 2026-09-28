@@ -18,6 +18,10 @@ DEFAULT_STORE_NAME = "Мамин хлеб | Аспан базар"
 DEFAULT_EXPIRY_DAYS = 1
 STATUS = "AVAILABLE"
 ROYALTY_STORE_NAME = "Royalty Coffee | Сыганак 3"
+# Prices in the `Бокс N - цена` format are supplied as discounted prices.
+# Keep this as a rule constant so the original-price policy can be changed
+# without touching the parser flow.
+PRICED_BOX_ORIGINAL_PRICE_MULTIPLIER = 2
 
 POINT_ALIASES = {
     "аспан базар": "Мамин хлеб | Аспан базар",
@@ -39,7 +43,11 @@ PRICED_BOX_RE = re.compile(
     r"^(?P<name>бокс\s+\d+)\s*-\s*(?P<price>\d+)\s*(?:тг|тенге|₸)?$",
     re.IGNORECASE,
 )
-COMPONENT_RE = re.compile(r"^(?P<name>.+?)\s+(?P<qty>\d+)$")
+COMPONENT_RE = re.compile(
+    r"^(?P<name>.+?)(?:\s*-\s*|\s+)(?P<qty>\d+)"
+    r"(?:\s*(?:шт|штуки|штук|порция|порции))?$",
+    re.IGNORECASE,
+)
 SEPARATOR_RE = re.compile(r"^[-=_*]{3,}\s*$")
 
 
@@ -155,8 +163,12 @@ def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=None):
             flush_box()
             current_box = priced_box.group("name").strip()
             current_price = int(priced_box.group("price"))
-            current_original_price = current_price
-            current_discount = 0
+            current_original_price = round(
+                current_price * PRICED_BOX_ORIGINAL_PRICE_MULTIPLIER
+            )
+            current_discount = round(
+                (1 - current_price / current_original_price) * 100
+            )
             continue
 
         box = BOX_RE.match(line)
