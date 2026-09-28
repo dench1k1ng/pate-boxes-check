@@ -1,5 +1,6 @@
 const els = {
   input: document.querySelector("#messageInput"),
+  storeName: document.querySelector("#storeNameInput"),
   expiryDate: document.querySelector("#expiryDateInput"),
   parseBtn: document.querySelector("#parseBtn"),
   clearBtn: document.querySelector("#clearBtn"),
@@ -125,6 +126,21 @@ function tomorrowDateValue() {
 function expiryDateTime() {
   if (!els.expiryDate.value) return null;
   return `${els.expiryDate.value}T21:00:00`;
+}
+
+function selectedStoreName() {
+  return els.storeName?.value.trim() || "";
+}
+
+function applyStoreName(cards) {
+  const storeName = selectedStoreName();
+  if (!storeName) return cards;
+  return cards.map((item) => ({
+    ...item,
+    storeName,
+    // The store changed, so a previously resolved CRM id must not survive.
+    storeId: null,
+  }));
 }
 
 function applyExpiryDate(cards) {
@@ -369,7 +385,12 @@ async function uploadToCrm(dryRun) {
     const data = await fetchJson("/api/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: applyExpiryDate(items), dryRun, force: false }),
+      body: JSON.stringify({
+        items: applyStoreName(applyExpiryDate(items)),
+        storeName: selectedStoreName(),
+        dryRun,
+        force: false,
+      }),
     });
     renderUploadReport(data);
     const summary = data.summary;
@@ -400,9 +421,9 @@ async function parseMessage() {
     const data = await fetchJson("/api/parse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, storeName: selectedStoreName() }),
     });
-    items = applyExpiryDate(data.items || []);
+    items = applyStoreName(applyExpiryDate(data.items || []));
     els.uploadReport.hidden = true;
     render();
     setStatus(`Готово: ${data.summary.ok} автоматически, ${data.summary.review} проверить`, "ok");
@@ -424,6 +445,16 @@ els.clearBtn.addEventListener("click", () => {
 els.sampleBtn.addEventListener("click", () => {
   els.input.value = sample;
   els.input.focus();
+});
+
+if (els.storeName && APP_CONFIG.defaultStoreName) {
+  els.storeName.value = APP_CONFIG.defaultStoreName;
+}
+els.storeName?.addEventListener("input", () => {
+  if (!items.length) return;
+  items = applyStoreName(items);
+  els.uploadReport.hidden = true;
+  render();
 });
 
 els.expiryDate.value = tomorrowDateValue();

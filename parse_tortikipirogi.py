@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Parser for Tortikipirogi's simple daily discount lists.
+"""Parser for simple daily discount lists from Tortikipirogi and other venues.
 
 Supported formats (both may appear in one message)::
 
     Трайфл медовый-760
     Круассан с семгой 1800, со скидкой 1440
+    27.09 KULINAR&CA. Цена за 1 шт
+    Клаб сэндвич с курицей 665 вместо 950 (в наличии 2 шт)
 
 Unlike the Pâté parser, this parser deliberately does not use a product
-catalogue or rename product names.  Every successfully parsed line becomes a
-CRM-ready card for the Tortikipirogi store.
+catalogue or rename product names. Every successfully parsed line becomes a
+CRM-ready card for the venue from the header, or for the Tortikipirogi store
+when no venue header is present.
 """
 import datetime
 import re
@@ -22,11 +25,17 @@ STATUS = "AVAILABLE"
 
 SEPARATOR_RE = re.compile(r"^[-=_*]{3,}\s*$")
 QUANTITY_RE = re.compile(
-    r"\b(?P<qty>\d+)\s*(?P<unit>шт(?:\.?|ук)?|штук|порц(?:ия|ии|ию|ий)?|пор|уп(?:ак(?:овк[аи])?)?)\b",
+    r"(?:(?:в\s+наличии)\s*)?\b(?P<qty>\d+)\s*(?P<unit>шт(?:\.?|ук)?|штук|порц(?:ия|ии|ию|ий)?|пор|уп(?:ак(?:овк[аи])?)?)\b",
     re.IGNORECASE,
 )
 NUMBER_WITH_SEPARATOR_RE = re.compile(r"(?<!\w)\d{1,3}(?:[ .]\d{3})+(?!\w)")
 CURRENCY_RE = re.compile(r"(?<=\d)\s*(?:тенге|тг|₸|т)(?=\s|$|[,.;])", re.IGNORECASE)
+VENUE_HEADER_RE = re.compile(
+    r"^\s*(?:\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\s+)?"
+    r"(?P<store>[^.\n]+?)\s*\.\s*цена\s+за\s+1\s*"
+    r"(?:шт\.?|штук|единиц[ау])(?:\s|$)",
+    re.IGNORECASE,
+)
 
 
 def normalize_number_separators(text):
@@ -35,7 +44,7 @@ def normalize_number_separators(text):
 
 def clean_line(line):
     line = line.replace("\ufeff", " ").replace("\u2060", " ").replace("\xa0", " ")
-    line = re.sub(r"^\s*\d+\s*[.)]\s*", "", line.strip())
+    line = re.sub(r"^\s*\d+\s*[.)](?=\s|$)\s*", "", line.strip())
     line = normalize_number_separators(line)
     line = CURRENCY_RE.sub("", line)
     return re.sub(r"\s+", " ", line).strip()
@@ -43,7 +52,15 @@ def clean_line(line):
 
 def is_header(line):
     normalized = re.sub(r"[^\w]+", " ", line.lower(), flags=re.UNICODE).strip()
-    return normalized in {"tortikipirogi", "tortikipirogi список"}
+    return normalized in {"tortikipirogi", "tortikipirogi список"} or VENUE_HEADER_RE.match(line) is not None
+
+
+def extract_venue_header(line):
+    """Return a venue name from a dated price-list header, if present."""
+    match = VENUE_HEADER_RE.match(clean_line(line))
+    if not match:
+        return None
+    return match.group("store").strip(" .:-") or None
 
 
 def extract_quantity(text):
@@ -58,6 +75,8 @@ def extract_quantity(text):
         return " "
 
     cleaned = QUANTITY_RE.sub(replace, text)
+    cleaned = re.sub(r"\(\s*\)", " ", cleaned)
+    cleaned = re.sub(r"\(\s*в\s+наличии\s*\)", " ", cleaned, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", cleaned).strip(" ,;-"), quantity, quantity_unit
 
 
@@ -69,6 +88,20 @@ def parse_line(line):
         return None
 
     text, quantity, quantity_unit = extract_quantity(text)
+
+    # Format 3: discounted price + "вместо" + original price.
+    reversed_explicit = re.match(
+        r"^(?P<name>.+?)\s+(?P<price>\d+)\s+вместо\s+(?P<original>\d+)(?:\s|$)",
+        text,
+        re.IGNORECASE,
+    )
+    if reversed_explicit:
+        name = reversed_explicit.group("name").strip(" ,;-«»")
+        price = int(reversed_explicit.group("price"))
+        original = int(reversed_explicit.group("original"))
+        if not name:
+            return {"rawLine": raw_line, "error": "не нашли название товара", "reviewReasons": ["не распознан формат строки"]}
+        return make_parsed(name, price, original, quantity, quantity_unit, assumed_discount=False)
 
     # Format 2: name + original price + "со скидкой" + discounted price.
     explicit = re.match(
@@ -96,7 +129,7 @@ def parse_line(line):
 
     return {
         "rawLine": raw_line,
-        "error": "не распознан формат строки: ожидается 'Название-цена' или 'Название оригинал, со скидкой цена'",
+        "error": "не распознан формат строки: ожидается 'Название-цена', 'Название оригинал, со скидкой цена' или 'Название цена вместо оригинала'",
         "reviewReasons": ["не распознан формат строки"],
     }
 
@@ -118,14 +151,14 @@ def make_parsed(name, price, original, quantity, quantity_unit, assumed_discount
     }
 
 
-def build_card(parsed, expiry_days=DEFAULT_EXPIRY_DAYS):
+def build_card(parsed, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=STORE_NAME):
     price = parsed["price"]
     original = parsed["originalPrice"]
     discount = round((1 - price / original) * 100) if original else 0
     reasons = list(dict.fromkeys(parsed.get("reviewReasons", [])))
     expiry = (datetime.date.today() + datetime.timedelta(days=expiry_days)).isoformat() + "T21:00:00"
     return {
-        "storeName": STORE_NAME,
+        "storeName": store_name,
         "storeId": None,
         "rawLine_name": parsed["name"],
         "matchedCanonical": None,
@@ -148,16 +181,28 @@ def build_card(parsed, expiry_days=DEFAULT_EXPIRY_DAYS):
     }
 
 
-def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS):
+def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=None):
+    """Parse a message, optionally forcing one venue name for every card.
+
+    A name supplied by the UI takes precedence over names embedded in a
+    message header. Without it, the historical header-based behavior remains.
+    """
     results = []
+    selected_store_name = str(store_name or "").strip() or None
+    current_store_name = selected_store_name or STORE_NAME
     for line in raw_text.splitlines():
+        venue = extract_venue_header(line)
+        if venue:
+            if selected_store_name is None:
+                current_store_name = venue
+            continue
         parsed = parse_line(line)
         if parsed is None:
             continue
         if parsed.get("error"):
             results.append(
                 {
-                    "storeName": STORE_NAME,
+                    "storeName": current_store_name,
                     "rawLine": parsed["rawLine"],
                     "needsReview": True,
                     "reviewReasons": parsed.get("reviewReasons", []),
@@ -165,7 +210,7 @@ def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS):
                 }
             )
         else:
-            card = build_card(parsed, expiry_days)
+            card = build_card(parsed, expiry_days, store_name=current_store_name)
             card["rawLine_name"] = parsed["name"]
             results.append(card)
     return results

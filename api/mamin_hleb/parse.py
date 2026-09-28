@@ -1,7 +1,7 @@
 from http.server import BaseHTTPRequestHandler
 import json
 
-from parse_tortikipirogi import process
+from parse_mamin_hleb import process
 
 
 class handler(BaseHTTPRequestHandler):
@@ -19,7 +19,7 @@ class handler(BaseHTTPRequestHandler):
                     "total": len(items),
                     "ok": sum(1 for item in items if not item.get("needsReview")),
                     "review": sum(1 for item in items if item.get("needsReview")),
-                    "stores": 1 if items else 0,
+                    "stores": len({item.get("storeName") for item in items if item.get("storeName")}),
                 },
             })
         except Exception as exc:

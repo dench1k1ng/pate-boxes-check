@@ -3,18 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tortikipirogi CRM Preview</title>
+    <title>Мамин хлеб — FoodSave CRM</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Прайс-лист → FoodSave CRM</p>
-          <h1>Предпросмотр списка заведения</h1>
+          <p class="eyebrow">Мамин хлеб → FoodSave CRM</p>
+          <h1>Разбор боксов по точкам</h1>
         </div>
         <div class="topbar-actions">
-          <a class="mode-link" href="/mamin-hleb">Мамин хлеб</a>
+          <a class="mode-link" href="/">KULINAR&amp;CA</a>
           <div class="status-pill" id="status">Готов к парсингу</div>
         </div>
       </header>
@@ -26,12 +26,14 @@
             <button class="ghost" id="sampleBtn" type="button">Пример</button>
           </div>
           <label class="store-name-field" for="storeNameInput">
-            <span>Название заведения</span>
-            <input id="storeNameInput" type="text" value="KULINAR&amp;CA" placeholder="Например, KULINAR&amp;CA" autocomplete="organization" />
-            <small>Это название будет у всех распознанных товаров.</small>
+            <span>Точка по умолчанию</span>
+            <input id="storeNameInput" type="text" value="" placeholder="Оставь пустым, если точка есть в сообщении" autocomplete="organization" />
+            <small>«Аспан базар», «Абая 8», «Ауэзова 42» и «Сыганак 3» внутри сообщения определяются автоматически.</small>
           </label>
-          <textarea id="messageInput" spellcheck="false" placeholder="27.09 KULINAR&amp;CA. Цена за 1 шт
-Клаб сэндвич с курицей 665 вместо 950 (в наличии 2 шт)"></textarea>
+          <textarea id="messageInput" spellcheck="false" placeholder="Аспан базар
+Сладкий бокс
+Мини творожник 2
+Мини шарлотка 2"></textarea>
           <div class="date-field">
             <label for="expiryDateInput">Срок годности для всех товаров</label>
             <input id="expiryDateInput" type="date" />
@@ -41,7 +43,7 @@
             <button id="parseBtn" type="button">Обработать</button>
             <button class="secondary" id="clearBtn" type="button">Очистить</button>
           </div>
-          <p class="note">Название выше имеет приоритет над названием внутри сообщения. Фото не обязательны; сомнительные строки нужно подтвердить вручную.</p>
+          <p class="note">Для Маминого хлеба бокс стоит 1 725 ₸ вместо 3 450 ₸ (50%). Для формата «Бокс N - цена» цена берётся из строки, а строки ниже попадают в состав.</p>
         </section>
 
         <section class="review-panel">
@@ -96,9 +98,9 @@
     </dialog>
     <script>
       window.__APP_CONFIG__ = {
-        apiPrefix: "/api/tortikipirogi",
-        defaultStoreName: "KULINAR&CA",
-        sample: "27.09 KULINAR&CA. Цена за 1 шт\nКлаб сэндвич с курицей 665 вместо 950 (в наличии 2 шт)\nСамса с мясом 315 вместо 450 (в наличии 4 шт)\nМясной пирог 3150 вместо 4500 (в наличии 2 шт)"
+        apiPrefix: "/api/mamin-hleb",
+        defaultStoreName: "",
+        sample: "Аспан базар\nСладкий бокс\nМини творожник 2\nМини шарлотка 2\nМаковик 3\nМини сметанник 1\n\nСладкий бокс 2\nМини сметанник 3\nВатрушка с творогом 2\nЛакомка арахис 1\nМаковик 1\nЛакомка банан 1\nБагет с изюмом 1\n\nСытный бокс 1\nПирог курица картошка 1\nАшлама 1\nСосиски в тесте 1\n\nСытный бокс 2\nХот дог 2\nСамса с мясом 2\nСосиски в тесте 3\n\nСытный бокс 3\nБутерброд 2\nАшлама 1\nСамса с курицей 2\nПирожок яйцо лук 1\nПирог с картошкой 1\n\nСытный бокс 4\nХачапури 3\nБагет провансаль с ветчиной 2\nПирожок с картошкой 3\n\nСытный бокс 5\nЭлеш 1\nХачапури с сыром 3\nСосиски в тесте 2\nБагет провансаль с ветчиной 1"
       };
     </script>
     <script src="/app.js"></script>

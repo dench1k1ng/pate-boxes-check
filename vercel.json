@@ -17,6 +17,15 @@
     },
     "api/tortikipirogi/images.py": {
       "maxDuration": 30
+    },
+    "api/mamin_hleb/parse.py": {
+      "maxDuration": 30
+    },
+    "api/mamin_hleb/upload.py": {
+      "maxDuration": 30
+    },
+    "api/mamin_hleb/images.py": {
+      "maxDuration": 30
     }
   },
   "rewrites": [
@@ -50,6 +59,26 @@
     },
     {
       "source": "/tortikipirogi/(.*)",
+      "destination": "/web/$1"
+    },
+    {
+      "source": "/mamin-hleb",
+      "destination": "/web/mamin_hleb.html"
+    },
+    {
+      "source": "/mamin-hleb/",
+      "destination": "/web/mamin_hleb.html"
+    },
+    {
+      "source": "/mamin-hleb/app.js",
+      "destination": "/web/app.js"
+    },
+    {
+      "source": "/mamin-hleb/style.css",
+      "destination": "/web/style.css"
+    },
+    {
+      "source": "/mamin-hleb/(.*)",
       "destination": "/web/$1"
     }
   ]

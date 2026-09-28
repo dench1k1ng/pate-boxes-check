@@ -5,10 +5,16 @@ from server import upload_cards
 
 
 CRM_OVERRIDES = {
-    "category_name": "Кондитерские изделия",
+    "category_name": "Пекарня",
     "store_aliases": {
-        "tortikipirogi": "Tortikipirogi",
-        "kulinar&ca": "KULINAR&CA",
+        "аспан базар": "Мамин хлеб | Аспан базар",
+        "мамин хлеб аспан базар": "Мамин хлеб | Аспан базар",
+        "абая 8": "Мамин хлеб | Абая 8",
+        "мамин хлеб абая 8": "Мамин хлеб | Абая 8",
+        "ауэзова 42": "Мамин хлеб | Ауэзова, 42",
+        "ауэзова, 42": "Мамин хлеб | Ауэзова, 42",
+        "сыганак 3": "Royalty Coffee | Сыганак 3",
+        "royalty coffee сыганак 3": "Royalty Coffee | Сыганак 3",
     },
 }
 

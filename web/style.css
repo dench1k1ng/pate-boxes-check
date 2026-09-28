@@ -45,6 +45,27 @@ body {
   margin-bottom: 20px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-link {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--accent-dark);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.mode-link:hover {
+  background: #e9f4f1;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--accent-dark);
@@ -119,6 +140,36 @@ textarea {
   padding: 14px;
   font: 15px/1.45 "JetBrains Mono", "Consolas", monospace;
   outline: none;
+}
+
+.store-name-field {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.store-name-field input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  color: var(--ink);
+  padding: 11px 12px;
+  font: inherit;
+  outline: none;
+}
+
+.store-name-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.16);
+}
+
+.store-name-field small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 textarea:focus {
