@@ -7,21 +7,118 @@ Supported formats (both may appear in one message)::
     Круассан с семгой 1800, со скидкой 1440
     27.09 KULINAR&CA. Цена за 1 шт
     Клаб сэндвич с курицей 665 вместо 950 (в наличии 2 шт)
+    Coffi | Бокейхана 10
+    Бейгл с курицей 1/1890
+    🧡 Бокс №1 — Сытный 🥐
+    🥐 Круассан с семгой — 925 ₸
+    💰 Итого: 925 ₸
 
 Unlike the Pâté parser, this parser deliberately does not use a product
-catalogue or rename product names. Every successfully parsed line becomes a
-CRM-ready card for the venue from the header, or for the Tortikipirogi store
-when no venue header is present.
+catalogue or rename product names. Each product line or named box becomes a
+CRM-ready card. Box components are retained in the description; the total is
+the price after a 50% discount. The venue comes from the UI or message header,
+falling back to Tortikipirogi.
 """
 import datetime
+import html
 import re
+from pathlib import Path
 
 
 STORE_NAME = "Tortikipirogi"
 CATEGORY_NAME = "Кондитерские изделия"
 DEFAULT_DISCOUNT_PCT = 20
+COFFI_DEFAULT_DISCOUNT_PCT = 60
+COFFI_TODAY_DISCOUNT_PCT = 50
 DEFAULT_EXPIRY_DAYS = 1
 STATUS = "AVAILABLE"
+# As in the existing priced-box format, the supplied total is the sale price.
+BOX_ORIGINAL_PRICE_MULTIPLIER = 2
+TORTIKI_IMAGE_ROOT = "images/tortiki"
+BOX_POINT_HEADERS = {"сыганак 3": "Royalty Coffee | Сыганак 3"}
+PRICED_BOX_HEADER_RE = re.compile(r"^бокс\s*№?\s*(?P<number>\d+)\s*[-–—]\s*(?P<price>\d+)$", re.IGNORECASE)
+BOX_HEADER_RE = re.compile(r"^бокс\s*№?\s*(?P<number>\d+)\s*[-–—]\s*(?P<title>.+)$", re.IGNORECASE)
+BOX_COMPONENT_RE = re.compile(r"^(?P<name>.+?)\s*[-–—]\s*(?P<price>\d+)$")
+BOX_QUANTITY_RE = re.compile(
+    r"^(?P<name>.+?)\s*[-–—]\s*(?P<qty>\d+)\s*(?P<unit>шт|штуки|штук|порция|порции|пор|уп)?$",
+    re.IGNORECASE,
+)
+BOX_TOTAL_RE = re.compile(r"^итого\s*:\s*(?P<price>\d+)$", re.IGNORECASE)
+COFFI_HEADER_RE = re.compile(r"^coffi\s*\|\s*.+$", re.IGNORECASE)
+
+
+def is_coffi_store(store_name):
+    return re.match(r"^coffi(?:\s*\||$)", str(store_name or "").strip(), re.IGNORECASE) is not None
+
+
+def clean_box_line(line):
+    text = clean_line(html.unescape(line).replace("\u202f", " "))
+    # Remove decorative emoji at the edges, retaining punctuation inside names.
+    return re.sub(r"^[^\w]+|[^\w]+$", "", text).strip()
+
+
+def build_box_card(box, expiry_days):
+    components = box["components"]
+    reasons = list(box["reasons"])
+    total = box["price"] if box["price"] is not None else box["total"]
+    if box["price"] is None:
+        if total is None:
+            total = sum(price for _, price in components)
+            reasons.append("не указана строка Итого; цена рассчитана по составу")
+        elif total != sum(price for _, price in components):
+            reasons.append("сумма цен состава не совпадает с Итого")
+    if not components:
+        reasons.append("не указан состав бокса")
+    if any(value <= 0 for _, value in components):
+        reasons.append("количество компонента должно быть больше нуля" if box["price"] is not None else "цена компонента должна быть больше нуля")
+    parsed = make_parsed(
+        box["name"], total, round(total * BOX_ORIGINAL_PRICE_MULTIPLIER),
+        1, None, assumed_discount=True,
+    )
+    parsed["reviewReasons"].extend(reasons)
+    card = build_card(parsed, expiry_days, box["store"])
+    card["description"] = "Состав:\n" + "\n".join(box["description"])
+    return card
+
+
+def _image_key(value):
+    """Normalize a product/photo name for tolerant filename matching."""
+    value = str(value or "").lower().replace("ё", "е")
+    value = re.sub(r"^\d+[_ .-]*", "", value)
+    value = value.replace("_", " ").replace("-", " ")
+    return re.sub(r"[^\w]+", " ", value, flags=re.UNICODE).strip()
+
+
+def _load_tortiki_images():
+    root = Path(__file__).resolve().parent / TORTIKI_IMAGE_ROOT
+    if not root.exists():
+        return {}
+    images = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            continue
+        relative = path.relative_to(Path(__file__).resolve().parent).as_posix()
+        images[_image_key(path.stem)] = relative
+    return images
+
+
+TORTIKI_IMAGES = _load_tortiki_images()
+TORTIKI_IMAGE_ALIASES = {
+    "баннофи пай": "банофи пай",
+    "баннофи пай мини": "банофи пай mini",
+    "пицци мини": "пицца mini",
+    "самса курица мясо": "самса с мясом или курицей",
+    "самса с мясом": "самса с мясом или курицей",
+    "самса с курицей": "самса с мясом или курицей",
+}
+
+
+def image_for_product(name):
+    key = _image_key(name)
+    key = _image_key(TORTIKI_IMAGE_ALIASES.get(key, key))
+    if key in TORTIKI_IMAGES:
+        return TORTIKI_IMAGES[key]
+    return None
 
 SEPARATOR_RE = re.compile(r"^[-=_*]{3,}\s*$")
 QUANTITY_RE = re.compile(
@@ -80,7 +177,7 @@ def extract_quantity(text):
     return re.sub(r"\s+", " ", cleaned).strip(" ,;-"), quantity, quantity_unit
 
 
-def parse_line(line):
+def parse_line(line, store_name=STORE_NAME, coffi_discount_pct=COFFI_DEFAULT_DISCOUNT_PCT):
     """Return a parsed line or an error card fragment."""
     raw_line = line.strip()
     text = clean_line(raw_line).rstrip(".")
@@ -89,9 +186,25 @@ def parse_line(line):
 
     text, quantity, quantity_unit = extract_quantity(text)
 
+    if is_coffi_store(store_name):
+        quantity_price = re.fullmatch(
+            r"(?P<name>.+?)\s+(?P<qty>\d+)\s*/\s*(?P<original>\d+)", text
+        )
+        if quantity_price:
+            original = int(quantity_price["original"])
+            price = round(original * (100 - coffi_discount_pct) / 100)
+            parsed = make_parsed(
+                quantity_price["name"].strip(), price, original,
+                int(quantity_price["qty"]), "шт", assumed_discount=True,
+            )
+            if parsed["qty"] <= 0:
+                parsed["reviewReasons"].append("количество должно быть больше нуля")
+            return parsed
+
     # Format 3: discounted price + "вместо" + original price.
+    # The sale price may follow a dash, including after a cake weight range.
     reversed_explicit = re.match(
-        r"^(?P<name>.+?)\s+(?P<price>\d+)\s+вместо\s+(?P<original>\d+)(?:\s|$)",
+        r"^(?P<name>.+?)(?:\s*[-–—]\s*|\s+)(?P<price>\d+)\s+вместо\s+(?P<original>\d+)(?:\s|$)",
         text,
         re.IGNORECASE,
     )
@@ -157,6 +270,8 @@ def build_card(parsed, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=STORE_NAME):
     discount = round((1 - price / original) * 100) if original else 0
     reasons = list(dict.fromkeys(parsed.get("reviewReasons", [])))
     expiry = (datetime.date.today() + datetime.timedelta(days=expiry_days)).isoformat() + "T21:00:00"
+    coffi_store = is_coffi_store(store_name)
+    image = None if coffi_store else image_for_product(parsed["name"])
     return {
         "storeName": store_name,
         "storeId": None,
@@ -172,8 +287,8 @@ def build_card(parsed, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=STORE_NAME):
         "assumedDiscount": parsed.get("assumedDiscount", False),
         "assumedFromCatalog": False,
         "stockQuantity": parsed.get("qty", 1),
-        "categoryName": CATEGORY_NAME,
-        "images": [],
+        "categoryName": "Кофейня" if coffi_store else CATEGORY_NAME,
+        "images": [image] if image else [],
         "expiryDate": expiry,
         "status": STATUS,
         "reviewReasons": reasons,
@@ -190,13 +305,92 @@ def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=None):
     results = []
     selected_store_name = str(store_name or "").strip() or None
     current_store_name = selected_store_name or STORE_NAME
-    for line in raw_text.splitlines():
+    coffi_discount_pct = COFFI_DEFAULT_DISCOUNT_PCT
+    lines = html.unescape(raw_text).splitlines()
+    has_boxes = any(BOX_HEADER_RE.fullmatch(clean_box_line(line)) for line in lines)
+    box = None
+
+    def flush_box():
+        nonlocal box
+        if box is not None:
+            results.append(build_box_card(box, expiry_days))
+            box = None
+
+    for line in lines:
+        if COFFI_HEADER_RE.fullmatch(clean_line(line)):
+            flush_box()
+            if selected_store_name is None:
+                current_store_name = clean_line(line)
+                coffi_discount_pct = COFFI_DEFAULT_DISCOUNT_PCT
+            continue
         venue = extract_venue_header(line)
         if venue:
+            flush_box()
             if selected_store_name is None:
                 current_store_name = venue
+                coffi_discount_pct = COFFI_DEFAULT_DISCOUNT_PCT
             continue
-        parsed = parse_line(line)
+        if is_coffi_store(current_store_name) and re.fullmatch(r"сегодняшнее:?", clean_line(line), re.IGNORECASE):
+            coffi_discount_pct = COFFI_TODAY_DISCOUNT_PCT
+            continue
+        if has_boxes:
+            text = clean_box_line(line)
+            if not text or re.match(r"^добрый\s+вечер\b", text, re.IGNORECASE):
+                continue
+            point = BOX_POINT_HEADERS.get(text.lower())
+            if point:
+                flush_box()
+                if selected_store_name is None:
+                    current_store_name = point
+                continue
+            priced_heading = PRICED_BOX_HEADER_RE.fullmatch(text)
+            if priced_heading:
+                flush_box()
+                box = {
+                    "name": f"Бокс {priced_heading['number']}",
+                    "store": current_store_name, "components": [],
+                    "description": [], "total": None,
+                    "price": int(priced_heading["price"]), "reasons": [],
+                }
+                continue
+            heading = BOX_HEADER_RE.fullmatch(text)
+            if heading:
+                flush_box()
+                box = {
+                    "name": f"Бокс №{heading['number']} — {heading['title']}",
+                    "store": current_store_name, "components": [],
+                    "description": [], "total": None, "price": None, "reasons": [],
+                }
+                continue
+            if box is not None:
+                if box["price"] is not None:
+                    component = BOX_QUANTITY_RE.fullmatch(text)
+                    if component:
+                        name = component["name"].strip()
+                        quantity = int(component["qty"])
+                        unit = component["unit"]
+                        box["components"].append((name, quantity))
+                        box["description"].append(f"{name} — {quantity}" + (f" {unit}." if unit else ""))
+                    else:
+                        box["description"].append(line.strip())
+                        box["reasons"].append(f"не распознана строка состава: {line.strip()}")
+                    continue
+                total = BOX_TOTAL_RE.fullmatch(text)
+                if total:
+                    box["total"] = int(total["price"])
+                    flush_box()
+                    continue
+                component = BOX_COMPONENT_RE.fullmatch(text)
+                if component:
+                    name = component["name"].strip()
+                    price = int(component["price"])
+                    box["components"].append((name, price))
+                    box["description"].append(f"{name} — {price} ₸")
+                else:
+                    box["description"].append(line.strip())
+                    box["reasons"].append(f"не распознана строка состава: {line.strip()}")
+                continue
+        parsed = parse_line(line, store_name=current_store_name, coffi_discount_pct=coffi_discount_pct)
         if parsed is None:
             continue
         if parsed.get("error"):
@@ -213,6 +407,7 @@ def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=None):
             card = build_card(parsed, expiry_days, store_name=current_store_name)
             card["rawLine_name"] = parsed["name"]
             results.append(card)
+    flush_box()
     return results
 
 

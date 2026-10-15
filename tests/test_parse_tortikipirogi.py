@@ -166,7 +166,7 @@ class TortikipirogiParserTest(unittest.TestCase):
         self.assertEqual(report["summary"]["skipped"], 1)
         self.assertEqual(report["report"][1]["reason"], "не распознана строка")
 
-    def test_dry_run_payload_has_crm_defaults_and_no_images(self):
+    def test_dry_run_payload_has_crm_defaults_and_matching_image(self):
         card = process("Круассан с семгой 1800, со скидкой 1440")[0]
         with patch("server.CrmClient", FakeCrmClient):
             report = upload_cards(
@@ -183,7 +183,8 @@ class TortikipirogiParserTest(unittest.TestCase):
         self.assertEqual(payload["price"], 1440)
         self.assertEqual(payload["originalPrice"], 1800)
         self.assertEqual(payload["stockQuantity"], 1)
-        self.assertEqual(payload["images"], [])
+        self.assertEqual(len(payload["images"]), 1)
+        self.assertTrue(payload["images"][0].endswith("30_Круассан_с_семгой.jpg"))
         self.assertEqual(payload["status"], "AVAILABLE")
 
     def test_venue_from_header_resolves_to_matching_crm_store(self):

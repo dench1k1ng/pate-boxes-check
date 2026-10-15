@@ -48,7 +48,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in {"/mamin-hleb", "/mamin-hleb/"}:
             path = "/mamin_hleb.html"
         if path == "/api/tortikipirogi/images":
-            return self.send_json({"images": []})
+            return self.handle_images()
         if path == "/api/mamin-hleb/images":
             return self.send_json({"images": []})
         if path.startswith("/images/") or path.startswith("/images_from_pdf/"):
@@ -108,6 +108,20 @@ class Handler(BaseHTTPRequestHandler):
     def read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
         return json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+
+    def handle_images(self):
+        try:
+            image_root = ROOT / "images" / "tortiki"
+            files = []
+            if image_root.exists():
+                files = sorted(
+                    f"images/tortiki/{path.relative_to(image_root).as_posix()}"
+                    for path in image_root.rglob("*")
+                    if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+                )
+            return self.send_json({"images": files})
+        except Exception as exc:
+            return self.send_json({"error": str(exc)}, status=500)
 
     def serve_file(self, path):
         try:

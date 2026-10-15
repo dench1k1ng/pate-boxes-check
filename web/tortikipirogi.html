@@ -27,8 +27,8 @@
           </div>
           <label class="store-name-field" for="storeNameInput">
             <span>Название заведения</span>
-            <input id="storeNameInput" type="text" value="KULINAR&amp;CA" placeholder="Например, KULINAR&amp;CA" autocomplete="organization" />
-            <small>Это название будет у всех распознанных товаров.</small>
+            <input id="storeNameInput" type="text" placeholder="Например, Coffi | Бокейхана 10" autocomplete="organization" />
+            <small>Укажите точку перед обработкой списка. Она будет у всех распознанных товаров.</small>
           </label>
           <textarea id="messageInput" spellcheck="false" placeholder="27.09 KULINAR&amp;CA. Цена за 1 шт
 Клаб сэндвич с курицей 665 вместо 950 (в наличии 2 шт)"></textarea>
@@ -41,7 +41,7 @@
             <button id="parseBtn" type="button">Обработать</button>
             <button class="secondary" id="clearBtn" type="button">Очистить</button>
           </div>
-          <p class="note">Название выше имеет приоритет над названием внутри сообщения. Фото не обязательны; сомнительные строки нужно подтвердить вручную.</p>
+          <p class="note">Название выше имеет приоритет над названием внутри сообщения. Для Coffi формат «Название 2/1790» означает 2 шт. по исходной цене 1790 ₸; скидка по умолчанию 60%, при строке «Сегодняшнее» — 50%. Поддерживаются боксы «Бокс №1 — Название»: состав сохраняется в описании, «Итого» — цена со скидкой 50%. Фото не обязательны; сомнительные строки нужно подтвердить вручную.</p>
         </section>
 
         <section class="review-panel">
@@ -97,7 +97,7 @@
     <script>
       window.__APP_CONFIG__ = {
         apiPrefix: "/api/tortikipirogi",
-        defaultStoreName: "KULINAR&CA",
+        defaultStoreName: "",
         sample: "27.09 KULINAR&CA. Цена за 1 шт\nКлаб сэндвич с курицей 665 вместо 950 (в наличии 2 шт)\nСамса с мясом 315 вместо 450 (в наличии 4 шт)\nМясной пирог 3150 вместо 4500 (в наличии 2 шт)"
       };
     </script>

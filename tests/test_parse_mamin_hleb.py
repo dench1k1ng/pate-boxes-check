@@ -48,6 +48,28 @@ MESSAGE = """Аспан базар
 Сосиски в тесте 2
 Багет провансаль с ветчиной 1"""
 
+MARKDOWN_PRICED_MESSAGE = """Аспан Базар
+**Сладкий бокс — 1725 ₸**
+Мини-шарлотка — 1 шт\\
+Ватрушка с творогом — 3 шт\\
+Лакомка арахис — 1 шт\\
+Лакомка банан — 1 шт\\
+Улитка с корицей — 1 шт\\
+Арахисовое кольцо — 1 шт\\
+Сочень с творогом — 1 шт
+**Сытный бокс 1 — 1725 ₸**
+Пирожок с картошкой — 2 шт\\
+Сосиска в тесте — 1 шт\\
+Самса с мясом — 1 шт\\
+Ашлама — 2 шт\\
+Хот-дог — 1 шт\\
+**Сытный бокс 2 — 1725 ₸**
+Пицца с ветчиной — 2 шт\\
+Багет «Провансаль» — 1 шт\\
+Хот-дог — 1 шт\\
+Фуршет-самса с курицей — 2 шт\\
+Фуршет-самса с мясом — 1 шт"""
+
 
 class FakeCrmClient:
     def __init__(self, base_url, email, password):
@@ -81,6 +103,16 @@ class FakeCrmClient:
 
 
 class MaminHlebParserTest(unittest.TestCase):
+    def test_markdown_priced_boxes_and_currency_components(self):
+        cards = process(MARKDOWN_PRICED_MESSAGE)
+        self.assertEqual(len(cards), 3)
+        self.assertEqual([card["name"] for card in cards], ["Сладкий бокс", "Сытный бокс 1", "Сытный бокс 2"])
+        self.assertEqual([card["price"] for card in cards], [1725, 1725, 1725])
+        self.assertTrue(all(card["originalPrice"] == 3450 for card in cards))
+        self.assertTrue(all(not card["needsReview"] for card in cards))
+        self.assertIn("Мини-шарлотка — 1", cards[0]["description"])
+        self.assertIn("Фуршет-самса с мясом — 1", cards[2]["description"])
+
     def test_boxes_become_fixed_price_cards_with_composition(self):
         cards = process(MESSAGE)
 
@@ -166,6 +198,32 @@ class MaminHlebParserTest(unittest.TestCase):
         self.assertEqual(cards[0]["discountPercentage"], 50)
         self.assertIn("Круассан — 1", cards[0]["description"])
         self.assertIn("Панини — 1", cards[0]["description"])
+
+    def test_syganak_boxes_with_mixed_dashes_and_sentence_punctuation(self):
+        cards = process(
+            "Сыганак 3\n\n"
+            "Бокс 1 - 1615 тг\n"
+            "Панини с тунцом — 1 шт.\n"
+            "Профитроли сливочные — 1 шт.\n\n"
+            "Бокс 2 — 1150 тг\n"
+            "Миндальный круассан — 1 шт.\n"
+            "Арахисовый круассан — 1 шт.\n\n"
+            "Бокс 3 — 1875 тг\n"
+            "Фитбоул с лососем — 1 шт.\n"
+            "Арахисовый круассан — 1 шт."
+        )
+
+        self.assertEqual([card["name"] for card in cards], ["Бокс 1", "Бокс 2", "Бокс 3"])
+        self.assertEqual([card["price"] for card in cards], [1615, 1150, 1875])
+        self.assertEqual([card["originalPrice"] for card in cards], [3230, 2300, 3750])
+        self.assertEqual([card["discountPercentage"] for card in cards], [50, 50, 50])
+        self.assertEqual([card["description"] for card in cards], [
+            "Состав:\nПанини с тунцом — 1\nПрофитроли сливочные — 1",
+            "Состав:\nМиндальный круассан — 1\nАрахисовый круассан — 1",
+            "Состав:\nФитбоул с лососем — 1\nАрахисовый круассан — 1",
+        ])
+        self.assertTrue(all(card["storeName"] == "Royalty Coffee | Сыганак 3" for card in cards))
+        self.assertTrue(all(not card["needsReview"] for card in cards))
 
 
 if __name__ == "__main__":

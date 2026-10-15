@@ -2,6 +2,7 @@
 """Local web UI for parsing Pâté WhatsApp messages."""
 import json
 import mimetypes
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parent
 WEB_DIR = ROOT / "web"
 CATALOG_PATH = ROOT / "catalog_paste.json"
 MERGED_CATALOG_PATH = ROOT / "catalog_merged.json"
-CONFIG_PATH = ROOT / "config.json"
+CONFIG_PATH = Path(os.environ.get("PATE_CONFIG_PATH", ROOT / "config.json"))
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 

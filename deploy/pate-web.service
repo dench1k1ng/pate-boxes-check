@@ -1,0 +1,15 @@
+[Unit]
+Description=Pate CRM parser web server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/deshin/pate-runtime/app
+Environment=PATE_CONFIG_PATH=/home/deshin/pate-runtime/secrets/crm.json
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /home/deshin/pate-runtime/app/server.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

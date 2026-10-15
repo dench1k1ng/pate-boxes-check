@@ -1,0 +1,14 @@
+[Unit]
+Description=Protected Pate parser proxy
+After=pate-web.service pate-venues.service
+Requires=pate-web.service pate-venues.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/sbin/nginx -t -c /home/deshin/pate-runtime/nginx.conf -p /home/deshin/pate-runtime/
+ExecStart=/usr/sbin/nginx -c /home/deshin/pate-runtime/nginx.conf -p /home/deshin/pate-runtime/
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

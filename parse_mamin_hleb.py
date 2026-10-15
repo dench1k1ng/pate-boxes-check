@@ -38,14 +38,17 @@ POINT_ALIASES = {
     "royalty coffee сыганак 3": ROYALTY_STORE_NAME,
     "royalty coffee | сыганак 3": ROYALTY_STORE_NAME,
 }
-BOX_RE = re.compile(r"^(?P<name>(?:сладкий|сытный)\s+бокс(?:\s+\d+)?)$", re.IGNORECASE)
+BOX_RE = re.compile(
+    r"^(?P<name>(?:сладкий|сытный)\s+бокс(?:\s+\d+)?)(?:\s*[-–—:]\s*"
+    r"(?P<price>\d+)\s*(?:тг|тенге|₸)?)?$", re.IGNORECASE
+)
 PRICED_BOX_RE = re.compile(
-    r"^(?P<name>бокс\s+\d+)\s*-\s*(?P<price>\d+)\s*(?:тг|тенге|₸)?$",
+    r"^(?P<name>бокс\s+\d+)\s*[-–—]\s*(?P<price>\d+)\s*(?:тг|тенге|₸)?$",
     re.IGNORECASE,
 )
 COMPONENT_RE = re.compile(
-    r"^(?P<name>.+?)(?:\s*-\s*|\s+)(?P<qty>\d+)"
-    r"(?:\s*(?:шт|штуки|штук|порция|порции))?$",
+    r"^(?P<name>.+?)(?:\s*[-–—]\s*|\s+)(?P<qty>\d+)"
+    r"(?:\s*(?:шт|штуки|штук|порция|порции))?\.?$",
     re.IGNORECASE,
 )
 SEPARATOR_RE = re.compile(r"^[-=_*]{3,}\s*$")
@@ -54,6 +57,8 @@ SEPARATOR_RE = re.compile(r"^[-=_*]{3,}\s*$")
 def clean_line(line):
     value = html.unescape(line).replace("\ufeff", " ").replace("\u2060", " ")
     value = value.replace("\xa0", " ")
+    value = value.replace("\\", "")
+    value = re.sub(r"^\*+|\*+$", "", value.strip())
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -66,7 +71,11 @@ def extract_point(line):
 
 
 def parse_component(line):
-    match = COMPONENT_RE.match(clean_line(line))
+    value = clean_line(line)
+    # WhatsApp list markers/emojis are decoration, not part of the product.
+    value = re.sub(r"^[^\w«]+", "", value, flags=re.UNICODE)
+    value = re.sub(r"\s*(?:тг|тенге|₸)\s*$", "", value, flags=re.IGNORECASE)
+    match = COMPONENT_RE.match(value)
     if not match:
         return None
     name = match.group("name").strip(" .:-")
@@ -175,6 +184,10 @@ def process(raw_text, expiry_days=DEFAULT_EXPIRY_DAYS, store_name=None):
         if box:
             flush_box()
             current_box = box.group("name").strip()
+            if box.group("price"):
+                current_price = int(box.group("price"))
+                current_original_price = round(current_price * PRICED_BOX_ORIGINAL_PRICE_MULTIPLIER)
+                current_discount = round((1 - current_price / current_original_price) * 100)
             apply_store_profile()
             continue
 
